@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    volumes:
+      - db_data:/var/lib/postgresql/data/
+    networks:
+      - eureka-network
+    environment:
+      POSTGRES_USER: eureka
+      POSTGRES_PASSWORD: eureka
+      POSTGRES_DB: eureka
+    ports:
+      - "5435:5432"
+
+  web:
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./src:/app
+    networks:
+      - eureka-network
+    ports:
+      - "8000:8000"
+    environment:
+      DEBUG: "True"
+      SECRET_KEY: 'eureka_secret_1' # Replace with a strong secret key
+      DATABASE_URL: postgres://eureka:eureka@db:5432/eureka
+      PYTHONUNBUFFERED: 1
+    depends_on:
+      - db
+
+volumes:
+  db_data:
+
+networks:
+  eureka-network:
+    driver: bridge
+
+  
