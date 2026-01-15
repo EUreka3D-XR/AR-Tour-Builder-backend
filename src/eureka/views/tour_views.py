@@ -1,6 +1,7 @@
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.db.models import Count
 from ..models.tour import Tour
 from ..models.project import Project
 from ..models.poi import POI
@@ -10,6 +11,7 @@ from rest_framework.exceptions import PermissionDenied
 from django.core.exceptions import ObjectDoesNotExist
 from django.shortcuts import get_object_or_404
 from ..permissions import IsGroupMember
+from .mixins import LocaleContextMixin, POIPrefetchMixin
 
 @extend_schema(
     methods=['GET'],
@@ -18,6 +20,12 @@ from ..permissions import IsGroupMember
     tags=['Tours'],
     parameters=[
         OpenApiParameter(name='project_id', description='Filter tours by project ID', required=False, type=int),
+        OpenApiParameter(
+            name='locale',
+            description='Language code to filter multilingual fields (e.g., "en", "fr", "el"). If provided, multilingual fields will return just the string for that locale instead of the full multilingual object.',
+            required=False,
+            type=str
+        ),
     ],
     responses={
         200: TourSerializer(many=True)
@@ -35,7 +43,10 @@ from ..permissions import IsGroupMember
                 'title': {'type': 'object', 'description': 'Multilingual title with locales structure'},
                 'description': {'type': 'object', 'description': 'Multilingual description with locales structure (optional)'},
                 'is_public': {'type': 'boolean', 'description': 'Whether the tour is public (optional, defaults to false)'},
-                'project_id': {'type': 'integer', 'description': 'Project ID to create tour for (required)'}
+                'project_id': {'type': 'integer', 'description': 'Project ID to create tour for (required)'},
+                'distance_meters': {'type': 'integer', 'description': 'Total distance of the tour in meters (optional)'},
+                'duration_minutes': {'type': 'integer', 'description': 'Estimated duration of the tour in minutes (optional)'},
+                'locales': {'type': 'array', 'items': {'type': 'string'}, 'description': 'Supported language codes for this tour, e.g. ["en", "fr", "it"] (optional)'}
             },
             'required': ['title', 'project_id']
         }
@@ -71,14 +82,14 @@ from ..permissions import IsGroupMember
         )
     }
 )
-class TourListCreateView(generics.ListCreateAPIView):
+class TourListCreateView(POIPrefetchMixin, LocaleContextMixin, generics.ListCreateAPIView):
     serializer_class = TourSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
         user_groups = user.groups.all()
-        
+
         # Filter by project if specified
         project_id = self.request.query_params.get('project_id')
         if project_id:
@@ -86,33 +97,65 @@ class TourListCreateView(generics.ListCreateAPIView):
                 project = Project.objects.get(pk=project_id)  # type: ignore[attr-defined]
                 if project.group not in user_groups:
                     return Tour.objects.none()  # type: ignore[attr-defined]
-                return Tour.objects.filter(project=project)  # type: ignore[attr-defined]
+                # Annotate with counts and prefetch POIs for better performance
+                return Tour.objects.filter(project=project).prefetch_related(  # type: ignore[attr-defined]
+                    self.get_poi_prefetch()
+                ).annotate(
+                    total_pois=Count('pois', distinct=True),
+                    total_assets=Count('pois__assets', distinct=True)
+                )
             except ObjectDoesNotExist:
                 return Tour.objects.none()  # type: ignore[attr-defined]
-        
-        # Return all tours from user's groups
-        return Tour.objects.filter(project__group__in=user_groups)  # type: ignore[attr-defined]
+
+        # Return all tours from user's groups with prefetch and annotations
+        return Tour.objects.filter(project__group__in=user_groups).prefetch_related(  # type: ignore[attr-defined]
+            self.get_poi_prefetch()
+        ).annotate(
+            total_pois=Count('pois', distinct=True),
+            total_assets=Count('pois__assets', distinct=True)
+        )
 
     def perform_create(self, serializer):
         project_id = self.request.data.get('project_id')
         if not project_id:
             raise PermissionDenied('project_id is required to create a tour.')
-        
+
         try:
             project = Project.objects.get(pk=project_id)  # type: ignore[attr-defined]
         except ObjectDoesNotExist:
             raise PermissionDenied('Project not found.')
-        
+
         user = self.request.user
         if project.group not in user.groups.all():
             raise PermissionDenied('Not a member of the project group.')
-        
+
         serializer.save(project=project)
 
+    def create(self, request, *args, **kwargs):
+        """Override create to return the instance with optimized queryset"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+
+        # Refetch the created instance directly, since permission was already checked
+        instance = Tour.objects.get(pk=serializer.instance.pk)
+        serializer = self.get_serializer(instance)
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
 @extend_schema(
-    description="Retrieve, update, or delete a specific tour. User must have access to the tour's project. Project association and bounding box coordinates cannot be changed.",
+    description="Retrieve, update, or delete a specific tour. When retrieving, returns the tour with an array of its POIs (POIs are populated with their assets). User must have access to the tour's project. Project association and bounding box cannot be changed.",
     summary="Tour CRUD Operations",
     tags=['Tours'],
+    parameters=[
+        OpenApiParameter(
+            name='locale',
+            description='Language code to filter multilingual fields (e.g., "en", "fr", "el"). If provided, multilingual fields will return just the string for that locale instead of the full multilingual object.',
+            required=False,
+            type=str
+        ),
+    ],
     responses={
         200: TourSerializer,
         204: OpenApiResponse(
@@ -160,10 +203,18 @@ class TourListCreateView(generics.ListCreateAPIView):
         )
     }
 )
-class TourRetrieveUpdateView(generics.RetrieveUpdateAPIView):
+class TourRetrieveUpdateView(POIPrefetchMixin, LocaleContextMixin, generics.RetrieveUpdateAPIView):
     serializer_class = TourSerializer
     permission_classes = [permissions.IsAuthenticated, IsGroupMember]
-    queryset = Tour.objects.all()
+
+    def get_queryset(self):
+        # Annotate with counts and prefetch POIs for better performance
+        return Tour.objects.all().prefetch_related(  # type: ignore[attr-defined]
+            self.get_poi_prefetch()
+        ).annotate(
+            total_pois=Count('pois', distinct=True),
+            total_assets=Count('pois__assets', distinct=True)
+        )
 
     def delete(self, request, pk):
         user = request.user
@@ -179,10 +230,122 @@ class TourRetrieveUpdateView(generics.RetrieveUpdateAPIView):
         tour.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+class SetTourPublicStatusView(LocaleContextMixin, APIView):
+    """Base view for changing tour publication status."""
+    serializer_class = TourSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    is_public = None  # To be set by subclasses
+    action_name = None  # To be set by subclasses
+    
+    def post(self, request, pk):
+        user = request.user
+        user_groups = user.groups.all()
+        
+        try:
+            tour = Tour.objects.get(pk=pk)  # type: ignore[attr-defined]
+        except Tour.DoesNotExist:
+            return Response(
+                {'detail': 'Tour not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check permission: user must be a member of the project's group
+        if not tour.project.group in user_groups:
+            return Response(
+                {'detail': 'You do not have permission to publish this tour.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Set tour publication status
+        tour.is_public = self.is_public
+        tour.save()
+        
+        # Return updated tour data
+        context = {'request': request}
+        locale = request.query_params.get('locale')
+        if locale:
+            context['locale'] = locale
+        serializer = TourSerializer(tour, context=context)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+@extend_schema(
+    description="Publish a tour by setting is_public=True. User must be a member of the project group.",
+    summary="Publish Tour",
+    tags=['Tours'],
+    request=None,
+    responses={
+        200: TourSerializer,
+        403: OpenApiResponse(
+            description="Permission denied",
+            response={
+                'type': 'object',
+                'properties': {
+                    'detail': {'type': 'string', 'description': 'Error message'}
+                },
+                'required': ['detail']
+            }
+        ),
+        404: OpenApiResponse(
+            description="Tour not found",
+            response={
+                'type': 'object',
+                'properties': {
+                    'detail': {'type': 'string', 'description': 'Error message'}
+                },
+                'required': ['detail']
+            }
+        )
+    }
+)
+class PublishTourView(SetTourPublicStatusView):
+    is_public = True
+    action_name = 'publish'
+
+@extend_schema(
+    description="Unpublish a tour by setting is_public=False. User must be a member of the project group.",
+    summary="Unpublish Tour",
+    tags=['Tours'],
+    request=None,
+    responses={
+        200: TourSerializer,
+        403: OpenApiResponse(
+            description="Permission denied",
+            response={
+                'type': 'object',
+                'properties': {
+                    'detail': {'type': 'string', 'description': 'Error message'}
+                },
+                'required': ['detail']
+            }
+        ),
+        404: OpenApiResponse(
+            description="Tour not found",
+            response={
+                'type': 'object',
+                'properties': {
+                    'detail': {'type': 'string', 'description': 'Error message'}
+                },
+                'required': ['detail']
+            }
+        )
+    }
+)
+class UnpublishTourView(SetTourPublicStatusView):
+    is_public = False
+    action_name = 'unpublish'
+
 @extend_schema(
     description="Retrieve a published tour with all its associated data (POIs, assets, etc.) as a single JSON response.",
     summary="Get Published Tour",
     tags=['Tours'],
+    parameters=[
+        OpenApiParameter(
+            name='locale',
+            description='Language code to filter multilingual fields (e.g., "en", "fr", "el"). If provided, multilingual fields will return just the string for that locale instead of the full multilingual object.',
+            required=False,
+            type=str
+        ),
+    ],
     responses={
         200: OpenApiResponse(
             description="Published tour data",
@@ -193,20 +356,36 @@ class TourRetrieveUpdateView(generics.RetrieveUpdateAPIView):
                     'title': {'type': 'object', 'description': 'Multilingual title'},
                     'description': {'type': 'object', 'description': 'Multilingual description'},
                     'is_public': {'type': 'boolean', 'description': 'Public visibility flag'},
-                    'min_latitude': {'type': 'number', 'description': 'Minimum latitude'},
-                    'max_latitude': {'type': 'number', 'description': 'Maximum latitude'},
-                    'min_longitude': {'type': 'number', 'description': 'Minimum longitude'},
-                    'max_longitude': {'type': 'number', 'description': 'Maximum longitude'},
+                    'bounding_box': {
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'properties': {
+                                'lat': {'type': 'number', 'description': 'Latitude'},
+                                'long': {'type': 'number', 'description': 'Longitude'}
+                            }
+                        },
+                        'description': 'Bounding box as [southwest, northeast] coordinates'
+                    },
+                    'distance_meters': {'type': 'integer', 'description': 'Total distance of the tour in meters'},
+                    'duration_minutes': {'type': 'integer', 'description': 'Estimated duration of the tour in minutes'},
+                    'locales': {'type': 'array', 'items': {'type': 'string'}, 'description': 'Supported language codes for this tour, e.g. ["en", "fr", "it"]'},
                     'pois': {
                         'type': 'array',
                         'items': {
                             'type': 'object',
                             'properties': {
                                 'id': {'type': 'integer'},
-                                'name': {'type': 'object', 'description': 'Multilingual name'},
+                                'title': {'type': 'object', 'description': 'Multilingual title'},
                                 'description': {'type': 'object', 'description': 'Multilingual description'},
-                                'latitude': {'type': 'number'},
-                                'longitude': {'type': 'number'},
+                                'coordinates': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'lat': {'type': 'number', 'description': 'Latitude'},
+                                        'long': {'type': 'number', 'description': 'Longitude'}
+                                    },
+                                    'description': 'Coordinates object with lat/long'
+                                },
                                 'order': {'type': 'integer'},
                                 'assets': {
                                     'type': 'array',
@@ -226,21 +405,7 @@ class TourRetrieveUpdateView(generics.RetrieveUpdateAPIView):
                             }
                         }
                     },
-                    'assets': {
-                        'type': 'array',
-                        'items': {
-                            'type': 'object',
-                            'properties': {
-                                'id': {'type': 'integer'},
-                                'type': {'type': 'string'},
-                                'title': {'type': 'object', 'description': 'Multilingual title'},
-                                'description': {'type': 'object', 'description': 'Multilingual description'},
-                                'url': {'type': 'string'},
-                                'language': {'type': 'string'},
-                                'thumbnail': {'type': 'string'}
-                            }
-                        }
-                    }
+                    
                 }
             }
         ),
@@ -263,65 +428,88 @@ class PublishedTourView(generics.RetrieveAPIView):
     """
     Retrieve a published tour with all its associated data as a single JSON response.
     GET /api/publishedTour/{id}/
+
+    Supports locale filtering: pass a 'locale' query parameter to get just the string
+    for that locale instead of the full multilingual object.
     """
     queryset = Tour.objects.all()
     permission_classes = []  # No authentication required for published tours
-    
+
+    def _filter_multilingual_field(self, field_value, locale):
+        """
+        Helper to filter multilingual field based on locale.
+        Returns the string for the locale if locale is provided, otherwise the full object.
+        Falls back to 'en' if the requested locale doesn't exist.
+        """
+        if locale and isinstance(field_value, dict) and 'locales' in field_value:
+            locales = field_value['locales']
+            return locales.get(locale, locales.get('en', ''))
+        return field_value
+
+    def _filter_external_links(self, links_value, locale):
+        """
+        Helper to filter external links based on locale.
+        Returns the array for the locale if locale is provided, otherwise the full object.
+        Falls back to 'en' if the requested locale doesn't exist.
+        """
+        if locale and isinstance(links_value, dict) and 'locales' in links_value:
+            locales = links_value['locales']
+            return locales.get(locale, locales.get('en', []))
+        return links_value
+
+    def _filter_linked_asset(self, linked_asset_value, locale):
+        """
+        Helper to filter linked asset based on locale.
+        Returns the object for the locale if locale is provided, otherwise the full object.
+        Falls back to 'en' if the requested locale doesn't exist.
+        """
+        if locale and isinstance(linked_asset_value, dict) and 'locales' in linked_asset_value:
+            locales = linked_asset_value['locales']
+            return locales.get(locale, locales.get('en', {}))
+        return linked_asset_value
+
     def retrieve(self, request, *args, **kwargs):
         tour = self.get_object()
-        
+        locale = request.query_params.get('locale')
+
         # Build the complete tour data structure
         tour_data = {
             'id': tour.id,
-            'title': tour.title,
-            'description': tour.description,
+            'title': self._filter_multilingual_field(tour.title, locale),
+            'description': self._filter_multilingual_field(tour.description, locale),
             'is_public': tour.is_public,
-            'min_latitude': float(tour.min_latitude) if tour.min_latitude else None,
-            'max_latitude': float(tour.max_latitude) if tour.max_latitude else None,
-            'min_longitude': float(tour.min_longitude) if tour.min_longitude else None,
-            'max_longitude': float(tour.max_longitude) if tour.max_longitude else None,
+            'bounding_box': tour.bounding_box,
+            'distance_meters': tour.distance_meters,
+            'duration_minutes': tour.duration_minutes,
+            'locales': tour.locales,
+            'guided': tour.guided,
             'pois': [],
-            'assets': []
         }
-        
-        # Add POIs with their assets
+        # Add POIs with their POI assets
         for poi in tour.pois.all().order_by('order'):
             poi_data = {
                 'id': poi.id,
-                'name': poi.name,
-                'description': poi.description,
-                'latitude': poi.latitude,
-                'longitude': poi.longitude,
+                'title': self._filter_multilingual_field(poi.title, locale),
+                'description': self._filter_multilingual_field(poi.description, locale),
+                'coordinates': poi.coordinates,
+                'radius': poi.radius,
+                'external_links': self._filter_external_links(poi.external_links, locale),
                 'order': poi.order,
                 'assets': []
             }
-            
-            # Add assets associated with this POI
+            # Add POI assets associated with this POI
             for asset in poi.assets.all():
                 asset_data = {
                     'id': asset.id,
                     'type': asset.type,
-                    'title': asset.title,
-                    'description': asset.description,
-                    'url': asset.url,
-                    'language': asset.language,
-                    'thumbnail': asset.thumbnail
+                    'title': self._filter_multilingual_field(asset.title, locale),
+                    'description': self._filter_multilingual_field(asset.description, locale),
+                    'url': self._filter_multilingual_field(asset.url, locale),
+                    'priority': asset.priority,
+                    'view_in_ar': asset.view_in_ar,
+                    'coordinates': asset.coordinates,
+                    'linked_asset': self._filter_linked_asset(asset.linked_asset, locale)
                 }
                 poi_data['assets'].append(asset_data)
-            
             tour_data['pois'].append(poi_data)
-        
-        # Add tour-level assets (assets not associated with any POI)
-        for asset in tour.assets.all():
-            asset_data = {
-                'id': asset.id,
-                'type': asset.type,
-                'title': asset.title,
-                'description': asset.description,
-                'url': asset.url,
-                'language': asset.language,
-                'thumbnail': asset.thumbnail
-            }
-            tour_data['assets'].append(asset_data)
-        
-        return Response(tour_data) 
+        return Response(tour_data)

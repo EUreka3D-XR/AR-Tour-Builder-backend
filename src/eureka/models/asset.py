@@ -1,6 +1,7 @@
 from django.db import models
 from .poi import POI
 from .project import Project
+from .fields import MultilingualTextField, Coordinates
 import json
 
 
@@ -37,18 +38,20 @@ class AssetType(models.TextChoices):
 class Asset(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='assets')
     type = models.CharField(max_length=32, choices=AssetType.choices)
-    title = models.JSONField()
-    description = models.JSONField(blank=True, null=True)
-    url = models.URLField(blank=True, null=True)
-    language = models.CharField(max_length=10, blank=True, null=True)
-    thumbnail = models.URLField(blank=True, null=True)
-    thumbnail_data = models.BinaryField(blank=True, null=True)
+    title = MultilingualTextField()
+    description = MultilingualTextField(blank=True, null=True)
+    url = MultilingualTextField(blank=True, null=True)
+
+    # Optional georeference coordinates
+    coordinates = Coordinates(null=True, blank=True, help_text="Geographic coordinates (optional)")
+
     created_at = models.DateTimeField(auto_now_add=True)
-    tour = models.ForeignKey('Tour', on_delete=models.CASCADE, related_name='assets', null=True, blank=True)
-    poi = models.ForeignKey(POI, on_delete=models.CASCADE, related_name='assets', null=True, blank=True)
-    source_asset = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='derived_assets')
-    
-    # ... other fields as needed ... 
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def is_georeferenced(self):
+        """Returns True if coordinates are populated, False otherwise."""
+        return self.coordinates is not None and bool(self.coordinates)
 
     def __str__(self):
         return json.dumps({
@@ -58,9 +61,7 @@ class Asset(models.Model):
             "title": self.title,
             "description": self.description,
             "url": self.url,
-            "language": self.language,
-            "thumbnail": self.thumbnail,
+            "coordinates": self.coordinates,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-            "poi_id": self.poi_id,
-            "source_asset_id": self.source_asset_id,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }, ensure_ascii=False) 

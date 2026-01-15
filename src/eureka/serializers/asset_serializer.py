@@ -1,10 +1,11 @@
 from rest_framework import serializers
 from ..models.asset import Asset
-from .fields import MultilingualTextField
+from .fields import MultilingualTextField, Coordinates
 
 class AssetSerializer(serializers.ModelSerializer):
     """
     Serializer for the Asset model. Handles creation, retrieval, and updates of assets.
+    The coordinates field is optional and uses the Coordinates custom field.
     """
     title = MultilingualTextField(
         help_text="Multilingual title with locales structure"
@@ -14,19 +15,21 @@ class AssetSerializer(serializers.ModelSerializer):
         allow_null=True,
         help_text="Multilingual description with locales structure"
     )
-    
+    url = MultilingualTextField(
+        help_text="Multilingual URL with locales structure"
+    )
+
+    coordinates = Coordinates(
+        required=False,
+        allow_null=True,
+        help_text="Geographic coordinates with lat and long (optional)"
+    )
+
     # Read-only fields for associations (handled by views)
-    tour = serializers.PrimaryKeyRelatedField(read_only=True)
-    poi = serializers.PrimaryKeyRelatedField(read_only=True)
     project = serializers.PrimaryKeyRelatedField(read_only=True)
+    is_georeferenced = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Asset
-        fields = ['id', 'project', 'tour', 'poi', 'type', 'title', 'description', 'url', 'language', 'thumbnail', 'thumbnail_data', 'source_asset']
-        read_only_fields = ['source_asset']
-
-    def create(self, validated_data):
-        return super().create(validated_data)
-
-    def update(self, instance, validated_data):
-        return super().update(instance, validated_data) 
+        fields = ['id', 'project', 'type', 'title', 'description', 'url', 'coordinates', 'is_georeferenced', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at', 'is_georeferenced'] 

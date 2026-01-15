@@ -2,14 +2,14 @@ from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
 
 class UserManager(BaseUserManager):
-    def create_user(self, login, email, name=None, password=None):
-        if not login:
-            raise ValueError('Users must have a login')
+    def create_user(self, username, email, name=None, password=None):
+        if not username:
+            raise ValueError('Users must have a username')
         if not email:
             raise ValueError('Users must have an email address')
 
         user = self.model(
-            login=login,
+            username=username,
             email=self.normalize_email(email),
             name=name,
         )
@@ -28,9 +28,9 @@ class UserManager(BaseUserManager):
 
         return user
 
-    def create_superuser(self, login, email, password=None, name=None):
+    def create_superuser(self, username, email, password=None, name=None):
         user = self.create_user(
-            login=login,
+            username=username,
             email=self.normalize_email(email),
             password=password,
             name=name,
@@ -42,7 +42,7 @@ class UserManager(BaseUserManager):
 
 class User(AbstractBaseUser, PermissionsMixin):
     name = models.CharField(max_length=100, blank=True, null=True)
-    login = models.CharField(max_length=100, unique=True)
+    username = models.CharField(max_length=100, unique=True)
     email = models.EmailField(verbose_name='email address', max_length=255, unique=True)
     password = models.CharField(max_length=128)  # Handled by AbstractBaseUser
     is_active = models.BooleanField(default=True)  # type: ignore
@@ -58,19 +58,19 @@ class User(AbstractBaseUser, PermissionsMixin):
         help_text="The default group owned by this user for personal projects."
     )
 
-    USERNAME_FIELD = 'login'
+    USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = ['email']
 
     objects = UserManager()
 
     def __str__(self):
-        return self.login
+        return self.username
 
     def get_full_name(self):
-        return self.name if self.name else self.login
+        return self.name if self.name else self.username
 
     def get_short_name(self):
-        return self.name if self.name else self.login
+        return self.name if self.name else self.username
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)

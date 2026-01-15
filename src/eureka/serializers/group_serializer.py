@@ -20,18 +20,18 @@ class GroupCreateSerializer(serializers.ModelSerializer):
 class GroupMemberManagementSerializer(serializers.Serializer):
     """
     Serializer for adding/removing users from a group.
-    Accepts either an email or a login to identify the user.
+    Accepts either an email or a username to identify the user.
     """
     user_identifier = serializers.CharField(required=True)
 
     def validate_user_identifier(self, value):
-        # Try to find the user by email or login
+        # Try to find the user by email or username
         try:
             # Check if it looks like an email first
             if '@' in value and '.' in value:
                 user = User.objects.get(email__iexact=value)
             else:
-                user = User.objects.get(login__iexact=value)
+                user = User.objects.get(username__iexact=value)
         except User.DoesNotExist:
             raise serializers.ValidationError("User with this identifier does not exist.")
         return user # Return the User instance if found

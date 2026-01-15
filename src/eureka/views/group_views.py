@@ -8,6 +8,7 @@ from django.db import transaction
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 
 from ..serializers import GroupCreateSerializer, GroupMemberManagementSerializer
+from ..serializers.user_serializer import UserSerializer
 from ..permissions import IsGroupMember # Your custom permission
 
 @extend_schema(
@@ -67,7 +68,7 @@ class GroupCreateView(generics.CreateAPIView):
         'application/json': {
             'type': 'object',
             'properties': {
-                'user_identifier': {'type': 'string', 'description': 'User login or email'}
+                'user_identifier': {'type': 'string', 'description': 'User username or email'}
             },
             'required': ['user_identifier']
         }
@@ -137,7 +138,7 @@ class GroupMemberAddView(APIView):
             return Response({'detail': 'User is already a member of this group.'}, status=status.HTTP_400_BAD_REQUEST)
 
         group.user_set.add(user_to_add)
-        return Response({'detail': f'User {user_to_add.login} added to group {group.name}.'}, status=status.HTTP_200_OK)
+        return Response({'detail': f'User {user_to_add.username} added to group {group.name}.'}, status=status.HTTP_200_OK)
 
 @extend_schema(
     description="Remove a user from a group. User cannot be removed from their personal group.",
@@ -147,7 +148,7 @@ class GroupMemberAddView(APIView):
         'application/json': {
             'type': 'object',
             'properties': {
-                'user_identifier': {'type': 'string', 'description': 'User login or email'}
+                'user_identifier': {'type': 'string', 'description': 'User username or email'}
             },
             'required': ['user_identifier']
         }
@@ -225,4 +226,59 @@ class GroupMemberRemoveView(APIView):
         # (though we're handling auto-deletion separately later)
 
         group.user_set.remove(user_to_remove)
-        return Response({'detail': f'User {user_to_remove.login} removed from group {group.name}.'}, status=status.HTTP_200_OK)
+        return Response({'detail': f'User {user_to_remove.username} removed from group {group.name}.'}, status=status.HTTP_200_OK)
+
+@extend_schema(
+    description="List all members of a group. User must be a member of the group to view its members.",
+    summary="List Group Members",
+    tags=['Group Management'],
+    responses={
+        200: UserSerializer(many=True),
+        403: OpenApiResponse(
+            description="Permission denied",
+            response={
+                'type': 'object',
+                'properties': {
+                    'detail': {'type': 'string', 'description': 'Error message'}
+                },
+                'required': ['detail']
+            },
+            examples=[
+                OpenApiExample('Permission Denied', value={'detail': 'You do not have permission to view this group.'})
+            ]
+        ),
+        404: OpenApiResponse(
+            description="Group not found",
+            response={
+                'type': 'object',
+                'properties': {
+                    'detail': {'type': 'string', 'description': 'Error message'}
+                },
+                'required': ['detail']
+            },
+            examples=[
+                OpenApiExample('Not Found', value={'detail': 'Not found.'})
+            ]
+        )
+    }
+)
+class GroupMemberListView(generics.ListAPIView):
+    """
+    List all members of a specific group.
+    GET /api/groups/{pk}/members
+
+    Returns an array of user objects who are members of the group.
+    User must be a member of the group to view its members.
+    """
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated, IsGroupMember]
+
+    def get_queryset(self):
+        group_id = self.kwargs.get('pk')
+        group = get_object_or_404(Group, pk=group_id)
+
+        # Check if user is a member of this group
+        self.check_object_permissions(self.request, group)
+
+        # Return all users in this group
+        return group.user_set.all().order_by('username')

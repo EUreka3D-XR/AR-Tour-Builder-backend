@@ -31,30 +31,30 @@ class TestAPIWorkflows:
         """
         # Step 1: User registration
         signup_data = {
-            'login': 'newuser',
+            'username': 'newuser',
             'email': 'newuser@example.com',
             'password': 'securepassword123',
             'name': 'New User'
         }
         
-        response = api_client.post('/api/auth/signup/', signup_data)
+        response = api_client.post('/api/auth/signup', signup_data)
         assert response.status_code == status.HTTP_201_CREATED
         assert 'user' in response.data
         
         # Step 2: User login
         login_data = {
-            'email': 'newuser@example.com',
+            'login': 'newuser@example.com',
             'password': 'securepassword123'
         }
         
-        response = api_client.post('/api/auth/login/', login_data)
+        response = api_client.post('/api/auth/login', login_data)
         assert response.status_code == status.HTTP_200_OK
         assert 'access' in response.data
         assert 'refresh' in response.data
         
         # Step 3: Access protected endpoint with authentication
         api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {response.data['access']}")
-        response = api_client.get('/api/auth/me/')
+        response = api_client.get('/api/auth/me')
         assert response.status_code == status.HTTP_200_OK
         assert response.data['email'] == 'newuser@example.com'
     
@@ -71,12 +71,13 @@ class TestAPIWorkflows:
         # Step 1: Create a new project
         project_data = {
             'title': 'My Vacation Project',
-            'description': 'A project documenting my vacation'
+            'description': 'A project documenting my vacation',
+            'locales': ['en', 'el']
         }
-        
-        response = authenticated_client.post('/api/projects/', project_data, format='json')
+        response = authenticated_client.post('/api/projects', project_data, format='json')
         assert response.status_code == status.HTTP_201_CREATED
         project_id = response.data['id']
+        assert response.data['locales'] == ['en', 'el']
         
         # Step 2: Add an asset to the project
         asset_data = {
@@ -97,7 +98,7 @@ class TestAPIWorkflows:
             'url': '/assets/beach_photo.jpg'
         }
         
-        response = authenticated_client.post('/api/assets/', asset_data, format='json')
+        response = authenticated_client.post('/api/assets', asset_data, format='json')
         assert response.status_code == status.HTTP_201_CREATED
         asset_id = response.data['id']
         
@@ -122,7 +123,7 @@ class TestAPIWorkflows:
             'real_height_meters': 300.0
         }
         
-        response = authenticated_client.post('/api/assets/', map_asset_data, format='json')
+        response = authenticated_client.post('/api/assets', map_asset_data, format='json')
         assert response.status_code == status.HTTP_201_CREATED
         map_asset_id = response.data['id']
         assert response.data['real_width_meters'] == 500.0
@@ -142,12 +143,17 @@ class TestAPIWorkflows:
                     'en': 'Explore the historic city of Athens',
                     'el': 'Εξερευνήστε την ιστορική πόλη της Αθήνας'
                 }
-            }
+            },
+            'distance_meters': 12345,
+            'duration_minutes': 120,
+            'locales': ['en', 'el']
         }
-        
-        response = authenticated_client.post('/api/tours/', tour_data, format='json')
+        response = authenticated_client.post('/api/tours', tour_data, format='json')
         assert response.status_code == status.HTTP_201_CREATED
         tour_id = response.data['id']
+        assert response.data['distance_meters'] == 12345
+        assert response.data['duration_minutes'] == 120
+        assert response.data['locales'] == ['en', 'el']
         
         # Step 4: Add a POI to the tour
         poi_data = {
@@ -164,17 +170,29 @@ class TestAPIWorkflows:
                     'el': 'Η αρχαία ακρόπολη της Αθήνας'
                 }
             },
-            'latitude': 37.9715,
-            'longitude': 23.7267
+            'coordinates': {
+                'lat': 37.9715,
+                'long': 23.7267
+            }
         }
-        
-        response = authenticated_client.post('/api/pois/', poi_data, format='json')
+        response = authenticated_client.post('/api/pois', poi_data, format='json')
         assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['coordinates']['lat'] == 37.9715
+        assert response.data['coordinates']['long'] == 23.7267
         
         # Step 5: Verify the complete workflow by retrieving the project
-        response = authenticated_client.get(f'/api/projects/{project_id}/')
+        response = authenticated_client.get(f'/api/projects/{project_id}')
         assert response.status_code == status.HTTP_200_OK
         assert response.data['title'] == 'My Vacation Project'
+        assert response.data['locales'] == ['en', 'el']
+        # Step 6: Retrieve the tour and check bounding_box
+        response = authenticated_client.get(f'/api/tours/{tour_id}')
+        assert response.status_code == status.HTTP_200_OK
+        assert 'bounding_box' in response.data
+        bbox = response.data['bounding_box']
+        assert isinstance(bbox, list)
+        assert bbox[0]['lat'] == 37.9715
+        assert bbox[0]['long'] == 23.7267
     
     def test_group_collaboration_workflow(self, authenticated_client, user, another_user):
         """
@@ -191,7 +209,7 @@ class TestAPIWorkflows:
             'description': 'Team for planning our vacation'
         }
         
-        response = authenticated_client.post('/api/groups/', group_data)
+        response = authenticated_client.post('/api/groups', group_data)
         assert response.status_code == status.HTTP_201_CREATED
         group_id = response.data['id']
         
@@ -201,7 +219,7 @@ class TestAPIWorkflows:
         }
         
         response = authenticated_client.post(
-            f'/api/groups/{group_id}/members/add/',
+            f'/api/groups/{group_id}/members/add',
             add_member_data
         )
         assert response.status_code == status.HTTP_200_OK
@@ -213,7 +231,7 @@ class TestAPIWorkflows:
             'group': group_id
         }
         
-        response = authenticated_client.post('/api/projects/', project_data, format='json')
+        response = authenticated_client.post('/api/projects', project_data, format='json')
         assert response.status_code == status.HTTP_201_CREATED
     
     def test_file_serving_workflow(self, authenticated_client):

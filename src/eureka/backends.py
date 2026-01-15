@@ -10,24 +10,24 @@ from typing import Optional
 class EmailBackend(ModelBackend):
     """
     Custom authentication backend that allows users to log in using their email address.
-    Falls back to login field if no user is found with the provided email.
+    Falls back to username field if no user is found with the provided email.
     """
     def authenticate(self, request, username=None, password=None, **kwargs):
         print(f"--- EmailBackend: Attempting authentication for username: {username} ---")
         UserModel = get_user_model()
-        
+
         # First, try to find user by email
         try:
             user = UserModel.objects.get(email=username)
             print("--- EmailBackend: User found by email. ---")
         except UserModel.DoesNotExist:
-            print("--- EmailBackend: No user found with that email, trying login field. ---")
-            # Fallback: try to find user by login field
+            print("--- EmailBackend: No user found with that email, trying username field. ---")
+            # Fallback: try to find user by username field
             try:
-                user = UserModel.objects.get(login=username)
-                print("--- EmailBackend: User found by login. ---")
+                user = UserModel.objects.get(username=username)
+                print("--- EmailBackend: User found by username. ---")
             except UserModel.DoesNotExist:
-                print("--- EmailBackend: No user found with that email or login. ---")
+                print("--- EmailBackend: No user found with that email or username. ---")
                 return None
 
         # If a user is found, check their password and ensure they are active

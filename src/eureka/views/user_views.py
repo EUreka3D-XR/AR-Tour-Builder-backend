@@ -288,6 +288,7 @@ class CurrentUserView(generics.RetrieveAPIView):
             ]
         )
     },
+
     description="Authenticate using an OpenID Connect ID token from EGI Check-In. "
                 "The backend will verify the token, and create or retrieve the user based on their email address. "
                 "Returns an authentication token for subsequent API requests.",
@@ -336,3 +337,55 @@ class OIDCLoginView(APIView):
             'user_id': str(user.id),
             'user': user_serializer.data
         }, status=status.HTTP_200_OK)
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            description="Logout successful",
+            response={
+                'type': 'object',
+                'properties': {
+                    'message': {'type': 'string', 'description': 'Success message'}
+                },
+                'required': ['message']
+            },
+            examples=[
+                OpenApiExample(
+                    'Logout Success',
+                    value={'message': 'Logout successful'},
+                    response_only=True,
+                    media_type='application/json'
+                )
+            ]
+        ),
+        401: OpenApiResponse(
+            description="Unauthorized access",
+            response={
+                'type': 'object',
+                'properties': {
+                    'error': {'type': 'string', 'description': 'Error message'}
+                },
+                'required': ['error']
+            },
+            examples=[
+                OpenApiExample(
+                    'Unauthorized Access',
+                    value={'error': 'Authentication credentials were not provided.'},
+                    response_only=True,
+                    media_type='application/json'
+                )
+            ]
+        )
+    },
+    description="Logout the currently authenticated user by deleting their authentication token.",
+    summary="User Logout",
+    tags=['User']
+)
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        # Delete the user's token from the database
+        request.user.auth_token.delete()
+        return Response({'message': 'Logout successful'}, status=status.HTTP_200_OK)

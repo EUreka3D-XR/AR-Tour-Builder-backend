@@ -5,7 +5,7 @@ def user():
     from django.contrib.auth import get_user_model
     User = get_user_model()
     user = User.objects.create_user(  # type: ignore
-        login='testuser',
+        username='testuser',
         email='test@example.com',
         password='testpass123',
         name='Test User'
@@ -17,7 +17,7 @@ def another_user():
     from django.contrib.auth import get_user_model
     User = get_user_model()
     user = User.objects.create_user(  # type: ignore
-        login='anotheruser',
+        username='anotheruser',
         email='another@example.com',
         password='testpass123',
         name='Another User'
@@ -30,7 +30,8 @@ def project(user):
     return Project.objects.create(  # type: ignore
         title='Test Project',
         description='A test project',
-        group=user.personal_group
+        group=user.personal_group,
+        locales=['en', 'fr', 'it']
     )
 
 @pytest.fixture
@@ -50,7 +51,10 @@ def tour(project):
     return Tour.objects.create(  # type: ignore
         project=project,
         title={'locales': {'en': 'Test Tour', 'el': 'Δοκιμαστική Περιήγηση'}},
-        description={'locales': {'en': 'A test tour', 'el': 'Μια δοκιμαστική περιήγηση'}}
+        description={'locales': {'en': 'A test tour', 'el': 'Μια δοκιμαστική περιήγηση'}},
+        locales=['en', 'fr', 'it'],
+        distance_meters=1234,
+        duration_minutes=56
     )
 
 @pytest.fixture
@@ -58,10 +62,10 @@ def poi(tour):
     from eureka.models import POI
     return POI.objects.create(  # type: ignore
         tour=tour,
-        name={'locales': {'en': 'Test POI', 'el': 'Δοκιμαστικό Σημείο'}},
+        title={'locales': {'en': 'Test POI', 'el': 'Δοκιμαστικό Σημείο'}},
         description={'locales': {'en': 'A test POI', 'el': 'Ένα δοκιμαστικό σημείο'}},
-        latitude=37.9838,
-        longitude=23.7275
+        coordinates={'lat': 37.9838, 'long': 23.7275},
+        order=1
     )
 
 @pytest.fixture

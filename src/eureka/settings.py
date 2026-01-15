@@ -27,6 +27,9 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+# Disable automatic slash appending for URLs
+APPEND_SLASH = False
+
 
 # Application definition
 
@@ -37,15 +40,16 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
     'eureka.apps.EurekaConfig',
     'rest_framework',
     'rest_framework.authtoken', 
     'drf_spectacular',
-    'djangoviz'
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -153,6 +157,15 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated', # Require authentication by default
     ),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema', # Link to spectacular
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '1000/hour',  # Anonymous users limited to 1000 requests per hour
+        'user': '10000/hour',  # Authenticated users get higher limit
+        'public_projects': '500/hour',  # Scoped throttle for public project endpoints (limit is per IP for anonymous users)
+    }
 }
 
 SPECTACULAR_SETTINGS = {
@@ -280,3 +293,28 @@ All multilingual content is stored in JSON format, allowing for flexible languag
         }
     }
 }
+
+# CORS Configuration
+# Allow requests from your React development server
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # React default port
+    "http://localhost:5173",  # Vite default port
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
+
+# Allow credentials (cookies, authorization headers)
+CORS_ALLOW_CREDENTIALS = True
+
+# Allow common headers
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]

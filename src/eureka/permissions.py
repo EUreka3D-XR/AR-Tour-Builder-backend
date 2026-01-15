@@ -2,30 +2,58 @@
 from rest_framework import permissions
 from django.contrib.auth.models import Group
 
-class IsGroupMember(permissions.BasePermission):
+
+class ReadOnlyPublicAccess(permissions.BasePermission):
     """
-    Custom permission to only allow members of a group to access/modify its members.
-    Assumes the group ID is passed in the URL (e.g., /groups/{group_id}/...).
+    Custom permission to allow read-only access to unauthenticated users,
+    while requiring authentication for write operations (POST, PUT, PATCH, DELETE).
+
+    Safe methods (GET, HEAD, OPTIONS) are allowed for everyone.
+    Unsafe methods require authentication.
     """
     def has_permission(self, request, view):
-        # Object-level permission is more appropriate here,
-        # but we use has_permission to fetch the group first.
-        group_id = view.kwargs.get('pk') # Or whatever your URLConf names the ID parameter
-        if not group_id:
-            return False # No group ID provided
+        # Allow safe methods (GET, HEAD, OPTIONS) for everyone
+        if request.method in permissions.SAFE_METHODS:
+            return True
 
-        try:
-            group = Group.objects.get(pk=group_id)
-        except Group.DoesNotExist:
-            # The group doesn't exist, so permission cannot be granted
-            return False
+        # For unsafe methods, require authentication
+        return request.user and request.user.is_authenticated
 
-        # Store the group object on the view for easier access in has_object_permission
-        view.group_object = group
-        return request.user.is_authenticated # Only authenticated users can check group membership
+class IsGroupMember(permissions.BasePermission):
+    """
+    Custom permission to only allow members of a group to access/modify objects.
+
+    For Group objects: checks if user is a member of the group itself
+    For other objects (Tour, Project, etc.): checks if user is a member of the object's associated group
+    """
+    def has_permission(self, request, view):
+        # For authenticated users, allow the check to proceed to has_object_permission
+        return request.user.is_authenticated
 
     def has_object_permission(self, request, view, obj):
         # Check if the requesting user is a member of the group
-        # 'obj' here would be the Group instance itself (from get_object in views)
-        return obj.user_set.filter(pk=request.user.pk).exists()
+        # Handle different object types
+
+        if isinstance(obj, Group):
+            # 'obj' is a Group instance itself
+            return obj.user_set.filter(pk=request.user.pk).exists()
+
+        # For objects with a 'group' attribute (like Project)
+        if hasattr(obj, 'group'):
+            return obj.group.user_set.filter(pk=request.user.pk).exists()
+
+        # For objects with a 'project' attribute (like Tour)
+        if hasattr(obj, 'project'):
+            return obj.project.group.user_set.filter(pk=request.user.pk).exists()
+
+        # For objects with a 'tour' attribute (like POI)
+        if hasattr(obj, 'tour') and hasattr(obj.tour, 'project'):
+            return obj.tour.project.group.user_set.filter(pk=request.user.pk).exists()
+
+        # For objects with a 'poi' attribute (like POIAsset)
+        if hasattr(obj, 'poi') and hasattr(obj.poi, 'tour') and hasattr(obj.poi.tour, 'project'):
+            return obj.poi.tour.project.group.user_set.filter(pk=request.user.pk).exists()
+
+        # If none of the above, deny permission
+        return False
     

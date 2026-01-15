@@ -9,7 +9,7 @@ class TestTour(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            login='testuser',
+            username='testuser',
             email='test@example.com',
             password='testpass123',
             name='Test User'
@@ -26,11 +26,11 @@ class TestTour(TestCase):
             title={'locales': {'en': 'Test Tour', 'el': 'Δοκιμαστική Περιήγηση'}},
             description={'locales': {'en': 'A test tour', 'el': 'Μια δοκιμαστική περιήγηση'}}
         )
-        
+
         self.assertEqual(tour.title['locales']['en'], 'Test Tour')
         self.assertEqual(tour.project, self.project)
         self.assertFalse(tour.is_public)
-        
+
         # Test JSON string representation
         str_repr = str(tour)
         json_data = json.loads(str_repr)
@@ -44,11 +44,26 @@ class TestTour(TestCase):
             project=self.project,
             title={'locales': {'en': 'Test Tour'}}
         )
-        
+
         str_repr = str(tour)
         json_data = json.loads(str_repr)
         self.assertEqual(json_data['title']['locales']['en'], 'Test Tour')
         self.assertIsNone(json_data['description'])
+
+    def test_tour_distance_and_duration_fields(self):
+        """Test that distance_meters and duration_minutes fields are stored and serialized correctly."""
+        tour = Tour.objects.create(
+            project=self.project,
+            title={'locales': {'en': 'Distance Tour'}},
+            distance_meters=9876,
+            duration_minutes=123
+        )
+        self.assertEqual(tour.distance_meters, 9876)
+        self.assertEqual(tour.duration_minutes, 123)
+        str_repr = str(tour)
+        json_data = json.loads(str_repr)
+        self.assertEqual(json_data['distance_meters'], 9876)
+        self.assertEqual(json_data['duration_minutes'], 123)
 
     def test_tour_bounding_box_calculation(self):
         """Test bounding box calculation with POIs."""
@@ -56,35 +71,35 @@ class TestTour(TestCase):
             project=self.project,
             title={'locales': {'en': 'Test Tour'}}
         )
-        
         # Create POIs at different coordinates
         poi1 = POI.objects.create(
             tour=tour,
-            name={'locales': {'en': 'POI 1'}},
-            latitude=37.9838,
-            longitude=23.7275,
+            title={'locales': {'en': 'POI 1'}},
+            coordinates={'lat': 37.9838, 'long': 23.7275},
             order=1
         )
         poi2 = POI.objects.create(
             tour=tour,
-            name={'locales': {'en': 'POI 2'}},
-            latitude=37.9840,
-            longitude=23.7280,
+            title={'locales': {'en': 'POI 2'}},
+            coordinates={'lat': 37.9840, 'long': 23.7280},
             order=2
         )
-        
         tour.update_bounding_box()
-        
-        self.assertEqual(float(tour.min_latitude), 37.9838)
-        self.assertEqual(float(tour.max_latitude), 37.9840)
-        self.assertEqual(float(tour.min_longitude), 23.7275)
-        self.assertEqual(float(tour.max_longitude), 23.7280)
-        
+
+        # Check the bounding box field
+        self.assertIsNotNone(tour.bounding_box)
+        self.assertEqual(tour.bounding_box[0]['lat'], 37.9838)
+        self.assertEqual(tour.bounding_box[0]['long'], 23.7275)
+        self.assertEqual(tour.bounding_box[1]['lat'], 37.9840)
+        self.assertEqual(tour.bounding_box[1]['long'], 23.7280)
+
         # Test JSON string representation
         str_repr = str(tour)
         json_data = json.loads(str_repr)
-        self.assertEqual(json_data['min_latitude'], 37.9838)
-        self.assertEqual(json_data['max_latitude'], 37.9840)
+        self.assertEqual(json_data['bounding_box'][0]['lat'], 37.9838)
+        self.assertEqual(json_data['bounding_box'][0]['long'], 23.7275)
+        self.assertEqual(json_data['bounding_box'][1]['lat'], 37.9840)
+        self.assertEqual(json_data['bounding_box'][1]['long'], 23.7280)
 
     def test_tour_bounding_box_empty(self):
         """Test bounding box calculation with no POIs."""
@@ -92,19 +107,13 @@ class TestTour(TestCase):
             project=self.project,
             title={'locales': {'en': 'Test Tour'}}
         )
-        
         tour.update_bounding_box()
-        
-        self.assertIsNone(tour.min_latitude)
-        self.assertIsNone(tour.max_latitude)
-        self.assertIsNone(tour.min_longitude)
-        self.assertIsNone(tour.max_longitude)
-        
+        self.assertIsNone(tour.bounding_box)
+
         # Test JSON string representation
         str_repr = str(tour)
         json_data = json.loads(str_repr)
-        self.assertIsNone(json_data['min_latitude'])
-        self.assertIsNone(json_data['max_latitude'])
+        self.assertIsNone(json_data['bounding_box'])
 
     def test_tour_public_flag(self):
         """Test tour public flag functionality."""
@@ -114,8 +123,8 @@ class TestTour(TestCase):
             is_public=True
         )
         self.assertTrue(tour.is_public)
-        
+
         # Test JSON string representation
         str_repr = str(tour)
         json_data = json.loads(str_repr)
-        self.assertTrue(json_data['is_public']) 
+        self.assertTrue(json_data['is_public'])

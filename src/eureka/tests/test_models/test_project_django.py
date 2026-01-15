@@ -8,7 +8,7 @@ class TestProject(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            login='testuser',
+            username='testuser',
             email='test@example.com',
             password='testpass123',
             name='Test User'
