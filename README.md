@@ -1,4 +1,4 @@
-# Eureka 3d Backend
+# EUreka3D-XR AR Tour Builder Backend
 
 To deploy this application call `EUREKA_PORT=2345 docker compose up`
 Or choose whatever port you like (if you dont specify one, the default is 8000, see docker-compose.yml file)
