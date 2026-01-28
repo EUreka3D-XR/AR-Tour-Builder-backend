@@ -460,12 +460,34 @@ class PublishedTourView(generics.RetrieveAPIView):
     def _filter_linked_asset(self, linked_asset_value, locale):
         """
         Helper to filter linked asset based on locale.
-        Returns the object for the locale if locale is provided, otherwise the full object.
+        Returns the title and url strings for the locale if locale is provided, otherwise the full object.
         Falls back to 'en' if the requested locale doesn't exist.
+
+        Input structure:
+        {
+            "title": {"locales": {"en": "...", "el": "..."}},
+            "url": {"locales": {"en": "...", "el": "..."}}
+        }
+
+        Output when locale is provided:
+        {
+            "title": "...",
+            "url": "..."
+        }
         """
-        if locale and isinstance(linked_asset_value, dict) and 'locales' in linked_asset_value:
-            locales = linked_asset_value['locales']
-            return locales.get(locale, locales.get('en', {}))
+        if not linked_asset_value or not isinstance(linked_asset_value, dict):
+            return linked_asset_value
+
+        if locale:
+            result = {}
+            for field in ['title', 'url']:
+                if field in linked_asset_value and isinstance(linked_asset_value[field], dict):
+                    locales = linked_asset_value[field].get('locales', {})
+                    result[field] = locales.get(locale, locales.get('en', ''))
+                else:
+                    result[field] = ''
+            return result
+
         return linked_asset_value
 
     def retrieve(self, request, *args, **kwargs):
@@ -507,7 +529,7 @@ class PublishedTourView(generics.RetrieveAPIView):
                     'url': self._filter_multilingual_field(asset.url, locale),
                     'priority': asset.priority,
                     'view_in_ar': asset.view_in_ar,
-                    'coordinates': asset.coordinates,
+                    'georeference': asset.georeference,
                     'linked_asset': self._filter_linked_asset(asset.linked_asset, locale)
                 }
                 poi_data['assets'].append(asset_data)

@@ -22,6 +22,35 @@ class Coordinates(serializers.JSONField):
     pass
 
 @extend_schema_field({
+    'type': 'object',
+    'properties': {
+        'coordinates': {
+            'type': 'object',
+            'properties': {
+                'lat': {'type': 'number', 'format': 'float', 'minimum': -90, 'maximum': 90},
+                'long': {'type': 'number', 'format': 'float', 'minimum': -180, 'maximum': 180}
+            },
+            'required': ['lat', 'long']
+        }
+    },
+    'required': ['coordinates'],
+    'description': 'Georeference with nested coordinates (lat/long)'
+})
+class Georeference(serializers.JSONField):
+    """
+    A custom serializer field for georeference with nested coordinates.
+
+    Expected structure:
+    {
+        "coordinates": {
+            "lat": 37.9838,
+            "long": 23.7275
+        }
+    }
+    """
+    pass
+
+@extend_schema_field({
     'type': 'array',
     'items': {
         'type': 'object',

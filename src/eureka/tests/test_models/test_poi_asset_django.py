@@ -67,6 +67,31 @@ class TestPOIAsset(TestCase):
 
         self.assertEqual(poi_asset.ar_placement, 'free')
 
+    def test_spawn_radius_default_value(self):
+        """Test that spawn_radius defaults to 5."""
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'Test Asset'}},
+            type='model3d',
+            url={'locales': {'en': '/test/model.glb'}}
+        )
+
+        self.assertEqual(poi_asset.spawn_radius, 5)
+
+    def test_spawn_radius_custom_value(self):
+        """Test creating POI asset with custom spawn_radius."""
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'Test Asset'}},
+            type='model3d',
+            url={'locales': {'en': '/test/model.glb'}},
+            spawn_radius=10.5
+        )
+
+        self.assertEqual(poi_asset.spawn_radius, 10.5)
+
     def test_ar_placement_free_choice(self):
         """Test creating POI asset with ar_placement='free'."""
         poi_asset = POIAsset.objects.create(
@@ -142,22 +167,22 @@ class TestPOIAsset(TestCase):
 
         self.assertFalse(poi_asset.view_in_ar)
 
-    def test_poi_asset_with_coordinates(self):
-        """Test creating a POI asset with optional coordinates."""
+    def test_poi_asset_with_georeference(self):
+        """Test creating a POI asset with optional georeference."""
         poi_asset = POIAsset.objects.create(
             poi=self.poi,
             source_asset=self.source_asset,
             title={'locales': {'en': 'Geolocated POI Asset'}},
             type='image',
             url={'locales': {'en': '/test/image.jpg'}},
-            coordinates={'lat': 37.9838, 'long': 23.7275}
+            georeference={'coordinates': {'lat': 37.9838, 'long': 23.7275}}
         )
 
-        self.assertEqual(poi_asset.coordinates['lat'], 37.9838)
-        self.assertEqual(poi_asset.coordinates['long'], 23.7275)
+        self.assertEqual(poi_asset.georeference['coordinates']['lat'], 37.9838)
+        self.assertEqual(poi_asset.georeference['coordinates']['long'], 23.7275)
 
-    def test_poi_asset_without_coordinates(self):
-        """Test creating a POI asset without coordinates."""
+    def test_poi_asset_without_georeference(self):
+        """Test creating a POI asset without georeference."""
         poi_asset = POIAsset.objects.create(
             poi=self.poi,
             source_asset=self.source_asset,
@@ -166,23 +191,23 @@ class TestPOIAsset(TestCase):
             url={'locales': {'en': '/test/video.mp4'}}
         )
 
-        self.assertIsNone(poi_asset.coordinates)
+        self.assertIsNone(poi_asset.georeference)
 
-    def test_is_georeferenced_property_with_coordinates(self):
-        """Test is_georeferenced property returns True when coordinates are set."""
+    def test_is_georeferenced_property_with_georeference(self):
+        """Test is_georeferenced property returns True when georeference is set."""
         poi_asset = POIAsset.objects.create(
             poi=self.poi,
             source_asset=self.source_asset,
             title={'locales': {'en': 'Geolocated Asset'}},
             type='image',
             url={'locales': {'en': '/test/image.jpg'}},
-            coordinates={'lat': 37.9838, 'long': 23.7275}
+            georeference={'coordinates': {'lat': 37.9838, 'long': 23.7275}}
         )
 
         self.assertTrue(poi_asset.is_georeferenced)
 
-    def test_is_georeferenced_property_without_coordinates(self):
-        """Test is_georeferenced property returns False when coordinates are None."""
+    def test_is_georeferenced_property_without_georeference(self):
+        """Test is_georeferenced property returns False when georeference is None."""
         poi_asset = POIAsset.objects.create(
             poi=self.poi,
             source_asset=self.source_asset,
@@ -202,21 +227,23 @@ class TestPOIAsset(TestCase):
             type='model3d',
             url={'locales': {'en': '/test/model.glb'}},
             linked_asset={
-                'locales': {
-                    'en': {
-                        'title': 'Audio Guide',
-                        'url': 'https://example.com/audio/guide.mp3'
-                    },
-                    'el': {
-                        'title': 'Ηχητικός Οδηγός',
-                        'url': 'https://example.com/audio/guide.mp3'
+                'title': {
+                    'locales': {
+                        'en': 'Audio Guide',
+                        'el': 'Ηχητικός Οδηγός'
+                    }
+                },
+                'url': {
+                    'locales': {
+                        'en': 'https://example.com/audio/guide.mp3',
+                        'el': 'https://example.com/audio/guide.mp3'
                     }
                 }
             }
         )
 
         self.assertIsNotNone(poi_asset.linked_asset)
-        self.assertEqual(poi_asset.linked_asset['locales']['en']['title'], 'Audio Guide')
+        self.assertEqual(poi_asset.linked_asset['title']['locales']['en'], 'Audio Guide')
 
     def test_poi_asset_str_representation(self):
         """Test string representation returns JSON."""

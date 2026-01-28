@@ -121,16 +121,18 @@ class POIAssetListCreateView(LocaleContextMixin, generics.ListCreateAPIView):
                 ).update(priority='normal')
 
             # Case 1: Creating POI asset from an existing source asset
+            source_asset = None
             if source_asset_id:
                 try:
                     source_asset = Asset.objects.get(pk=source_asset_id)  # type: ignore[attr-defined]
+                    # Ensure source asset belongs to the same project as the POI
+                    if source_asset.project != poi.tour.project:
+                        raise PermissionDenied('Source asset must belong to the same project as the POI.')
                 except ObjectDoesNotExist:
-                    raise PermissionDenied('Source asset not found.')
+                    # Source asset was deleted - we'll create a new one below
+                    source_asset = None
 
-                # Ensure source asset belongs to the same project as the POI
-                if source_asset.project != poi.tour.project:
-                    raise PermissionDenied('Source asset must belong to the same project as the POI.')
-
+            if source_asset:
                 # Copy fields from source asset if not provided
                 if 'title' not in validated_data:
                     validated_data['title'] = source_asset.title
@@ -143,7 +145,7 @@ class POIAssetListCreateView(LocaleContextMixin, generics.ListCreateAPIView):
 
                 serializer.save(poi=poi, source_asset=source_asset)
 
-            # Case 2: Creating POI asset from scratch (no source asset provided)
+            # Case 2: Creating POI asset from scratch (no source asset provided, or source asset was deleted)
             else:
                 # Validate required fields when creating from scratch
                 if 'title' not in validated_data:

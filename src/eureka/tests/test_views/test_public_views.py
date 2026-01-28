@@ -253,7 +253,7 @@ class TestPublicProjectPopulatedView(TestCase):
             priority='high',
             view_in_ar=True,
             ar_placement='ground',
-            coordinates={'lat': 40.7128, 'long': -74.0060}
+            georeference = {'coordinates': {'lat': 40.7128, 'long': -74.0060}}
         )
 
         # Update tour to have guided=True
@@ -293,7 +293,7 @@ class TestPublicProjectPopulatedView(TestCase):
             order=0
         )
 
-        # Create a POI asset without coordinates
+        # Create a POI asset without georeference
         poi_asset = POIAsset.objects.create(
             poi=poi,
             title={'locales': {'en': 'Test Asset'}},
@@ -303,7 +303,7 @@ class TestPublicProjectPopulatedView(TestCase):
             priority='normal',
             view_in_ar=False,
             ar_placement='free'
-            # No coordinates provided
+            # No georeference provided
         )
 
         response = self.client.get(f'/api/public/projects/{self.project.id}/populated')

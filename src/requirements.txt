@@ -5,6 +5,7 @@ django-cors-headers
 drf-spectacular
 drf-yasg
 psycopg2-binary
+dj-database-url
 markdown
 # Testing dependencies
 factory-boy

@@ -3,6 +3,35 @@ from django.core.exceptions import ValidationError
 import json
 
 
+def is_valid_georeference(georeference):
+    """
+    Check if a georeference has valid coordinates with populated lat/long values.
+
+    Args:
+        georeference: The georeference dict to check
+
+    Returns:
+        True if georeference has valid coordinates with numeric lat/long values, False otherwise.
+    """
+    if not georeference or not isinstance(georeference, dict):
+        return False
+
+    coordinates = georeference.get('coordinates')
+    if not coordinates or not isinstance(coordinates, dict):
+        return False
+
+    lat = coordinates.get('lat')
+    long = coordinates.get('long')
+
+    # Check that lat and long are actual numbers (not None, empty string, etc.)
+    return (
+        lat is not None and lat != '' and
+        long is not None and long != '' and
+        isinstance(lat, (int, float)) and
+        isinstance(long, (int, float))
+    )
+
+
 class Coordinates(models.JSONField):
     """
     A JSONField that enforces coordinate structure with lat and long.
@@ -96,6 +125,131 @@ class Coordinates(models.JSONField):
                 code='invalid_long_range',
                 params={'long': long}
             )
+
+    def deconstruct(self):
+        """
+        Support for migrations.
+        Tell Django how to serialize this field.
+        """
+        name, path, args, kwargs = super().deconstruct()
+        return name, path, args, kwargs
+
+
+class Georeference(models.JSONField):
+    """
+    A JSONField that enforces georeference structure with nested coordinates.
+
+    Expected structure:
+    {
+        "coordinates": {
+            "lat": 37.9838,
+            "long": 23.7275
+        }
+    }
+
+    This field provides:
+    - Schema validation at the model level
+    - Reusable across all models
+    - Self-documenting code
+    - Type safety through validation
+    - Nested coordinates structure for future extensibility
+
+    Usage:
+        class MyModel(models.Model):
+            georeference = Georeference()
+            location = Georeference(blank=True, null=True)
+    """
+
+    description = "Georeference with nested coordinates (lat/long)"
+
+    def _validate_coordinates(self, coords):
+        """Helper to validate the coordinates object."""
+        if not isinstance(coords, dict):
+            raise ValidationError(
+                "Coordinates must be a dictionary",
+                code='invalid_coordinates_type',
+                params={'value': coords}
+            )
+
+        # Check required keys
+        if "lat" not in coords:
+            raise ValidationError(
+                "Coordinates must have a 'lat' key",
+                code='missing_lat_key',
+                params={'value': coords}
+            )
+
+        if "long" not in coords:
+            raise ValidationError(
+                "Coordinates must have a 'long' key",
+                code='missing_long_key',
+                params={'value': coords}
+            )
+
+        # Validate lat value
+        lat = coords.get("lat")
+        if not isinstance(lat, (int, float)):
+            raise ValidationError(
+                f"Latitude must be a number, got {type(lat).__name__}",
+                code='invalid_lat_type',
+                params={'lat': lat}
+            )
+
+        # Validate latitude range (-90 to 90)
+        if not (-90 <= lat <= 90):
+            raise ValidationError(
+                f"Latitude must be between -90 and 90, got {lat}",
+                code='invalid_lat_range',
+                params={'lat': lat}
+            )
+
+        # Validate long value
+        long = coords.get("long")
+        if not isinstance(long, (int, float)):
+            raise ValidationError(
+                f"Longitude must be a number, got {type(long).__name__}",
+                code='invalid_long_type',
+                params={'long': long}
+            )
+
+        # Validate longitude range (-180 to 180)
+        if not (-180 <= long <= 180):
+            raise ValidationError(
+                f"Longitude must be between -180 and 180, got {long}",
+                code='invalid_long_range',
+                params={'long': long}
+            )
+
+    def validate(self, value, model_instance):
+        """Validate the JSON structure of georeference."""
+        super().validate(value, model_instance)
+
+        # Skip validation if field allows null and value is None
+        if value is None and self.null:
+            return
+
+        # Skip validation if field allows blank and value is empty
+        if not value and self.blank:
+            return
+
+        # Validate structure
+        if not isinstance(value, dict):
+            raise ValidationError(
+                "Georeference must be a dictionary",
+                code='invalid_type',
+                params={'value': value}
+            )
+
+        # Check required key
+        if "coordinates" not in value:
+            raise ValidationError(
+                "Georeference must have a 'coordinates' key",
+                code='missing_coordinates_key',
+                params={'value': value}
+            )
+
+        # Validate the nested coordinates
+        self._validate_coordinates(value.get("coordinates"))
 
     def deconstruct(self):
         """
@@ -849,26 +1003,28 @@ class PoiMediaStats(models.JSONField):
 
 class LinkedAsset(models.JSONField):
     """
-    A JSONField that enforces multilingual linked asset structure with title and URL.
+    A JSONField that enforces linked asset structure with multilingual title and URL.
 
     Expected structure:
     {
-        "locales": {
-            "en": {
-                "title": "English Wikipedia",
-                "url": "https://en.wikipedia.org/wiki/Example"
-            },
-            "fr": {
-                "title": "Wikipédia français",
-                "url": "https://fr.wikipedia.org/wiki/Exemple"
+        "title": {
+            "locales": {
+                "en": "English Wikipedia",
+                "fr": "Wikipédia français"
+            }
+        },
+        "url": {
+            "locales": {
+                "en": "https://en.wikipedia.org/wiki/Example",
+                "fr": "https://fr.wikipedia.org/wiki/Exemple"
             }
         }
     }
 
     This field provides:
     - Schema validation at the model level
-    - Multilingual support
-    - Title and URL for each locale
+    - Multilingual support for both title and URL
+    - Structure consistent with MultilingualTextField
     - Reusable across all models
     - Self-documenting code
     - Type safety through validation
@@ -879,7 +1035,46 @@ class LinkedAsset(models.JSONField):
             reference = LinkedAsset(blank=True, null=True)
     """
 
-    description = "Multilingual linked asset with title and URL for each locale"
+    description = "Linked asset with multilingual title and URL fields"
+
+    def _validate_multilingual_field(self, value, field_name):
+        """Helper to validate a multilingual field structure."""
+        if not isinstance(value, dict):
+            raise ValidationError(
+                f"'{field_name}' must be a dictionary",
+                code=f'invalid_{field_name}_type',
+                params={'value': value}
+            )
+
+        if "locales" not in value:
+            raise ValidationError(
+                f"'{field_name}' must have a 'locales' key",
+                code=f'missing_{field_name}_locales_key',
+                params={'value': value}
+            )
+
+        locales = value.get("locales")
+        if not isinstance(locales, dict):
+            raise ValidationError(
+                f"'{field_name}.locales' must be a dictionary",
+                code=f'invalid_{field_name}_locales_type',
+                params={'locales': locales}
+            )
+
+        for locale_code, text in locales.items():
+            if not isinstance(locale_code, str):
+                raise ValidationError(
+                    f"Locale code in '{field_name}' must be a string, got {type(locale_code).__name__}",
+                    code=f'invalid_{field_name}_locale_code',
+                    params={'locale_code': locale_code}
+                )
+
+            if not isinstance(text, str):
+                raise ValidationError(
+                    f"Value for locale '{locale_code}' in '{field_name}' must be a string, got {type(text).__name__}",
+                    code=f'invalid_{field_name}_locale_value',
+                    params={'locale_code': locale_code, 'text': text}
+                )
 
     def validate(self, value, model_instance):
         """Validate the JSON structure of linked asset."""
@@ -901,70 +1096,24 @@ class LinkedAsset(models.JSONField):
                 params={'value': value}
             )
 
-        if "locales" not in value:
+        # Check required keys
+        if "title" not in value:
             raise ValidationError(
-                "LinkedAsset must have a 'locales' key",
-                code='missing_locales_key',
+                "LinkedAsset must have a 'title' key",
+                code='missing_title_key',
                 params={'value': value}
             )
 
-        locales = value.get("locales")
-        if not isinstance(locales, dict):
+        if "url" not in value:
             raise ValidationError(
-                "'locales' must be a dictionary mapping locale codes to link objects",
-                code='invalid_locales_type',
-                params={'locales': locales}
+                "LinkedAsset must have a 'url' key",
+                code='missing_url_key',
+                params={'value': value}
             )
 
-        # Validate each locale entry
-        for locale_code, link_obj in locales.items():
-            if not isinstance(locale_code, str):
-                raise ValidationError(
-                    f"Locale code must be a string, got {type(locale_code).__name__}",
-                    code='invalid_locale_code',
-                    params={'locale_code': locale_code}
-                )
-
-            # Link object must be a dictionary
-            if not isinstance(link_obj, dict):
-                raise ValidationError(
-                    f"Link object for locale '{locale_code}' must be a dictionary, got {type(link_obj).__name__}",
-                    code='invalid_link_object_type',
-                    params={'locale_code': locale_code, 'link_obj': link_obj}
-                )
-
-            # Check required keys
-            if "title" not in link_obj:
-                raise ValidationError(
-                    f"Link object for locale '{locale_code}' must have a 'title' key",
-                    code='missing_link_title',
-                    params={'locale_code': locale_code, 'link_obj': link_obj}
-                )
-
-            if "url" not in link_obj:
-                raise ValidationError(
-                    f"Link object for locale '{locale_code}' must have a 'url' key",
-                    code='missing_link_url',
-                    params={'locale_code': locale_code, 'link_obj': link_obj}
-                )
-
-            # Validate title is a string
-            title = link_obj.get("title")
-            if not isinstance(title, str):
-                raise ValidationError(
-                    f"Title for locale '{locale_code}' must be a string, got {type(title).__name__}",
-                    code='invalid_link_title_type',
-                    params={'locale_code': locale_code, 'title': title}
-                )
-
-            # Validate url is a string
-            url = link_obj.get("url")
-            if not isinstance(url, str):
-                raise ValidationError(
-                    f"URL for locale '{locale_code}' must be a string, got {type(url).__name__}",
-                    code='invalid_link_url_type',
-                    params={'locale_code': locale_code, 'url': url}
-                )
+        # Validate title and url as multilingual fields
+        self._validate_multilingual_field(value.get("title"), "title")
+        self._validate_multilingual_field(value.get("url"), "url")
 
     def deconstruct(self):
         """

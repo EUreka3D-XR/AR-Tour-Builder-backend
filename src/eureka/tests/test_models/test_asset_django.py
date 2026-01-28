@@ -55,28 +55,28 @@ class TestAsset(TestCase):
         self.assertEqual(json_data['type'], AssetType.IMAGE)
         self.assertIsNone(json_data['description'])
 
-    def test_asset_with_coordinates(self):
-        """Test creating an asset with optional coordinates."""
+    def test_asset_with_georeference(self):
+        """Test creating an asset with optional georeference."""
         asset = Asset.objects.create(
             project=self.project,
             title={'locales': {'en': 'Geolocated Asset'}},
             type=AssetType.IMAGE,
             url={'locales': {'en': '/test/path/image.jpg'}},
-            coordinates={'lat': 37.9838, 'long': 23.7275}
+            georeference={'coordinates': {'lat': 37.9838, 'long': 23.7275}}
         )
 
-        self.assertEqual(asset.coordinates['lat'], 37.9838)
-        self.assertEqual(asset.coordinates['long'], 23.7275)
+        self.assertEqual(asset.georeference['coordinates']['lat'], 37.9838)
+        self.assertEqual(asset.georeference['coordinates']['long'], 23.7275)
 
         # Test JSON string representation
         str_repr = str(asset)
         json_data = json.loads(str_repr)
-        self.assertIsNotNone(json_data['coordinates'])
-        self.assertEqual(json_data['coordinates']['lat'], 37.9838)
-        self.assertEqual(json_data['coordinates']['long'], 23.7275)
+        self.assertIsNotNone(json_data['georeference'])
+        self.assertEqual(json_data['georeference']['coordinates']['lat'], 37.9838)
+        self.assertEqual(json_data['georeference']['coordinates']['long'], 23.7275)
 
-    def test_asset_without_coordinates(self):
-        """Test creating an asset without coordinates."""
+    def test_asset_without_georeference(self):
+        """Test creating an asset without georeference."""
         asset = Asset.objects.create(
             project=self.project,
             title={'locales': {'en': 'Non-geolocated Asset'}},
@@ -84,27 +84,27 @@ class TestAsset(TestCase):
             url={'locales': {'en': '/test/path/video.mp4'}}
         )
 
-        self.assertIsNone(asset.coordinates)
+        self.assertIsNone(asset.georeference)
 
         # Test JSON string representation
         str_repr = str(asset)
         json_data = json.loads(str_repr)
-        self.assertIsNone(json_data['coordinates'])
+        self.assertIsNone(json_data['georeference'])
 
-    def test_is_georeferenced_property_with_coordinates(self):
-        """Test is_georeferenced property returns True when coordinates are set."""
+    def test_is_georeferenced_property_with_georeference(self):
+        """Test is_georeferenced property returns True when georeference is set."""
         asset = Asset.objects.create(
             project=self.project,
             title={'locales': {'en': 'Geolocated Asset'}},
             type=AssetType.IMAGE,
             url={'locales': {'en': '/test/path/image.jpg'}},
-            coordinates={'lat': 37.9838, 'long': 23.7275}
+            georeference={'coordinates': {'lat': 37.9838, 'long': 23.7275}}
         )
 
         self.assertTrue(asset.is_georeferenced)
 
-    def test_is_georeferenced_property_without_coordinates(self):
-        """Test is_georeferenced property returns False when coordinates are None."""
+    def test_is_georeferenced_property_without_georeference(self):
+        """Test is_georeferenced property returns False when georeference is None."""
         asset = Asset.objects.create(
             project=self.project,
             title={'locales': {'en': 'Non-geolocated Asset'}},

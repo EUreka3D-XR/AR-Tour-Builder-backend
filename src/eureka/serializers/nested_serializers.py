@@ -3,7 +3,7 @@ from ..models.poi import POI
 from ..models.tour import Tour
 from ..models.project import Project
 from ..models.poi_asset import POIAsset
-from .fields import MultilingualTextField, Coordinates, BoundingBox, ExternalLinks, LinkedAsset
+from .fields import MultilingualTextField, Coordinates, Georeference, BoundingBox, ExternalLinks, LinkedAsset
 from .user_serializer import UserLiteSerializer
 
 
@@ -18,7 +18,7 @@ class POIAssetNestedSerializer(serializers.ModelSerializer):
     title = MultilingualTextField()
     description = MultilingualTextField(required=False, allow_null=True)
     url = MultilingualTextField()
-    coordinates = Coordinates(required=False, allow_null=True)
+    georeference = Georeference(required=False, allow_null=True)
     linked_asset = LinkedAsset(required=False, allow_null=True)
     is_georeferenced = serializers.BooleanField(read_only=True)
 
@@ -26,7 +26,7 @@ class POIAssetNestedSerializer(serializers.ModelSerializer):
         model = POIAsset
         fields = [
             'id', 'title', 'description', 'type', 'url',
-            'priority', 'view_in_ar', 'ar_placement', 'coordinates', 'is_georeferenced', 'linked_asset'
+            'priority', 'view_in_ar', 'ar_placement', 'georeference', 'is_georeferenced', 'linked_asset'
         ]
 
 

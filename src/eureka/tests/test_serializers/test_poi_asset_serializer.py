@@ -78,7 +78,7 @@ class TestPOIAssetSerializer(TestCase):
             title={'locales': {'en': 'Test Asset'}},
             type='image',
             url={'locales': {'en': '/test/image.jpg'}},
-            coordinates={'lat': 37.9838, 'long': 23.7275}
+            georeference={'coordinates': {'lat': 37.9838, 'long': 23.7275}}
         )
 
         serializer = POIAssetSerializer(poi_asset)
@@ -142,12 +142,16 @@ class TestPOIAssetSerializer(TestCase):
             priority='high',
             view_in_ar=True,
             ar_placement='ground',
-            coordinates={'lat': 37.9838, 'long': 23.7275},
+            georeference={'coordinates': {'lat': 37.9838, 'long': 23.7275}},
             linked_asset={
-                'locales': {
-                    'en': {
-                        'title': 'Audio Guide',
-                        'url': 'https://example.com/audio/guide.mp3'
+                'title': {
+                    'locales': {
+                        'en': 'Audio Guide'
+                    }
+                },
+                'url': {
+                    'locales': {
+                        'en': 'https://example.com/audio/guide.mp3'
                     }
                 }
             }
@@ -158,8 +162,8 @@ class TestPOIAssetSerializer(TestCase):
 
         expected_fields = [
             'id', 'poi', 'source_asset', 'title', 'description', 'type',
-            'url', 'priority', 'view_in_ar', 'ar_placement', 'coordinates',
-            'is_georeferenced', 'linked_asset', 'created_at', 'updated_at'
+            'url', 'priority', 'view_in_ar', 'ar_placement', 'spawn_radius',
+            'georeference', 'is_georeferenced', 'linked_asset', 'created_at', 'updated_at'
         ]
 
         for field in expected_fields:
@@ -223,3 +227,70 @@ class TestPOIAssetSerializer(TestCase):
         self.assertTrue(serializer.is_valid())
         updated_asset = serializer.save()
         self.assertEqual(updated_asset.ar_placement, 'ground')
+
+    def test_serializer_includes_spawn_radius_field(self):
+        """Test that the serializer includes spawn_radius field."""
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'Test Asset'}},
+            type='model3d',
+            url={'locales': {'en': '/test/model.glb'}},
+            spawn_radius=10.5
+        )
+
+        serializer = POIAssetSerializer(poi_asset)
+        data = serializer.data
+
+        self.assertIn('spawn_radius', data)
+        self.assertEqual(data['spawn_radius'], 10.5)
+
+    def test_serializer_spawn_radius_default_value(self):
+        """Test that serializer returns default 5 for spawn_radius."""
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'Test Asset'}},
+            type='model3d',
+            url={'locales': {'en': '/test/model.glb'}}
+        )
+
+        serializer = POIAssetSerializer(poi_asset)
+        data = serializer.data
+
+        self.assertEqual(data['spawn_radius'], 5)
+
+    def test_serializer_update_spawn_radius(self):
+        """Test updating spawn_radius via serializer."""
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'Test Asset'}},
+            type='model3d',
+            url={'locales': {'en': '/test/model.glb'}},
+            spawn_radius=5
+        )
+
+        data = {'spawn_radius': 15.0}
+        serializer = POIAssetSerializer(poi_asset, data=data, partial=True)
+
+        self.assertTrue(serializer.is_valid())
+        updated_asset = serializer.save()
+        self.assertEqual(updated_asset.spawn_radius, 15.0)
+
+    def test_serializer_spawn_radius_with_locale_context(self):
+        """Test that spawn_radius is included when fetching with locale context."""
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'English Title', 'el': 'Ελληνικός Τίτλος'}},
+            type='image',
+            url={'locales': {'en': '/test/image-en.jpg', 'el': '/test/image-el.jpg'}},
+            spawn_radius=8.5
+        )
+
+        serializer = POIAssetSerializer(poi_asset, context={'locale': 'en'})
+        data = serializer.data
+
+        self.assertIn('spawn_radius', data)
+        self.assertEqual(data['spawn_radius'], 8.5)

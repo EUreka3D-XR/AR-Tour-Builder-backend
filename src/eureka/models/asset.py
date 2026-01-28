@@ -1,7 +1,7 @@
 from django.db import models
 from .poi import POI
 from .project import Project
-from .fields import MultilingualTextField, Coordinates
+from .fields import MultilingualTextField, Georeference, is_valid_georeference
 import json
 
 
@@ -42,16 +42,16 @@ class Asset(models.Model):
     description = MultilingualTextField(blank=True, null=True)
     url = MultilingualTextField(blank=True, null=True)
 
-    # Optional georeference coordinates
-    coordinates = Coordinates(null=True, blank=True, help_text="Geographic coordinates (optional)")
+    # Optional georeference with coordinates
+    georeference = Georeference(null=True, blank=True, help_text="Georeference with coordinates (optional)")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     @property
     def is_georeferenced(self):
-        """Returns True if coordinates are populated, False otherwise."""
-        return self.coordinates is not None and bool(self.coordinates)
+        """Returns True if georeference has valid coordinates with populated lat/long values."""
+        return is_valid_georeference(self.georeference)
 
     def __str__(self):
         return json.dumps({
@@ -61,7 +61,7 @@ class Asset(models.Model):
             "title": self.title,
             "description": self.description,
             "url": self.url,
-            "coordinates": self.coordinates,
+            "georeference": self.georeference,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }, ensure_ascii=False) 

@@ -161,14 +161,16 @@ class POIAssetFactory(DjangoModelFactory):
     view_in_ar = False
     ar_placement = Iterator(['free', 'ground'])
     linked_asset = LazyAttribute(lambda obj: {
-        'locales': {
-            'en': {
-                'title': f'{fake.sentence(nb_words=2)} - Audio Guide',
-                'url': f'https://example.com/audio/{fake.uuid4()}.mp3'
-            },
-            'el': {
-                'title': f'{fake.sentence(nb_words=2)} - Ηχητικός Οδηγός',
-                'url': f'https://example.com/audio/{fake.uuid4()}.mp3'
+        'title': {
+            'locales': {
+                'en': f'{fake.sentence(nb_words=2)} - Audio Guide',
+                'el': f'{fake.sentence(nb_words=2)} - Ηχητικός Οδηγός'
+            }
+        },
+        'url': {
+            'locales': {
+                'en': f'https://example.com/audio/{fake.uuid4()}.mp3',
+                'el': f'https://example.com/audio/{fake.uuid4()}.mp3'
             }
         }
     } if obj.type == 'model3d' else None)

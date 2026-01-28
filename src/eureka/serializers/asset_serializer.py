@@ -1,11 +1,11 @@
 from rest_framework import serializers
 from ..models.asset import Asset
-from .fields import MultilingualTextField, Coordinates
+from .fields import MultilingualTextField, Georeference
 
 class AssetSerializer(serializers.ModelSerializer):
     """
     Serializer for the Asset model. Handles creation, retrieval, and updates of assets.
-    The coordinates field is optional and uses the Coordinates custom field.
+    The georeference field is optional and uses the Georeference custom field.
     """
     title = MultilingualTextField(
         help_text="Multilingual title with locales structure"
@@ -19,10 +19,10 @@ class AssetSerializer(serializers.ModelSerializer):
         help_text="Multilingual URL with locales structure"
     )
 
-    coordinates = Coordinates(
+    georeference = Georeference(
         required=False,
         allow_null=True,
-        help_text="Geographic coordinates with lat and long (optional)"
+        help_text="Georeference with nested coordinates (optional)"
     )
 
     # Read-only fields for associations (handled by views)
@@ -31,5 +31,5 @@ class AssetSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Asset
-        fields = ['id', 'project', 'type', 'title', 'description', 'url', 'coordinates', 'is_georeferenced', 'created_at', 'updated_at']
+        fields = ['id', 'project', 'type', 'title', 'description', 'url', 'georeference', 'is_georeferenced', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at', 'is_georeferenced'] 
