@@ -1122,3 +1122,105 @@ class LinkedAsset(models.JSONField):
         """
         name, path, args, kwargs = super().deconstruct()
         return name, path, args, kwargs
+
+
+def _validate_vector3(value, field_name="value"):
+    if not isinstance(value, dict):
+        raise ValidationError(
+            f"{field_name} must be a dictionary",
+            code="invalid_type",
+            params={"field": field_name, "expected_type": "dict"},
+        )
+    for axis in ("x", "y", "z"):
+        if axis not in value:
+            raise ValidationError(
+                f"{field_name} must have a '{axis}' key",
+                code="missing_key",
+                params={"field": field_name, "key": axis},
+            )
+        if not isinstance(value[axis], (int, float)):
+            raise ValidationError(
+                f"{field_name}.{axis} must be a number",
+                code="invalid_type",
+                params={
+                    "field": f"{field_name}.{axis}",
+                    "expected_type": "number",
+                },
+            )
+
+
+class Vector3(models.JSONField):
+    """
+    A JSONField that enforces a 3D vector structure.
+
+    Expected structure:
+    {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+    }
+
+    Usage:
+        class MyModel(models.Model):
+            position = Vector3()
+            offset = Vector3(blank=True, null=True)
+    """
+
+    description = "3D vector with x, y, z float components"
+
+    def validate(self, value, model_instance):
+        super().validate(value, model_instance)
+        if value is None and self.null:
+            return
+        if value == "" and self.blank:
+            return
+        _validate_vector3(value)
+
+    def deconstruct(self):
+        name, path, args, kwargs = super().deconstruct()
+        return name, path, args, kwargs
+
+
+class ModelTransform(models.JSONField):
+    """
+    A JSONField that enforces a 3D transform structure with position, rotation, and scale.
+
+    Expected structure:
+    {
+        "position": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "scale":    {"x": 1.0, "y": 1.0, "z": 1.0}
+    }
+
+    Usage:
+        class MyModel(models.Model):
+            transform = ModelTransform()
+            transform = ModelTransform(blank=True, null=True)
+    """
+
+    description = "3D transform with position, rotation, and scale as Vector3"
+
+    def validate(self, value, model_instance):
+        super().validate(value, model_instance)
+        if value is None and self.null:
+            return
+        if value == "" and self.blank:
+            return
+        if not isinstance(value, dict):
+            raise ValidationError(
+                "ModelTransform must be a dictionary",
+                code="invalid_type",
+                params={"field": "ModelTransform", "expected_type": "dict"},
+            )
+        for component in ("position", "rotation", "scale"):
+            if component not in value:
+                raise ValidationError(
+                    f"ModelTransform must have a '{component}' key",
+                    code="missing_key",
+                    params={"field": "ModelTransform", "key": component},
+                )
+            _validate_vector3(value[component], field_name=component)
+
+    def deconstruct(self):
+        name, path, args, kwargs = super().deconstruct()
+        return name, path, args, kwargs

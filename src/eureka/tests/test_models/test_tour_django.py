@@ -48,7 +48,7 @@ class TestTour(TestCase):
         str_repr = str(tour)
         json_data = json.loads(str_repr)
         self.assertEqual(json_data['title']['locales']['en'], 'Test Tour')
-        self.assertIsNone(json_data['description'])
+        self.assertEqual(json_data['description'], {})
 
     def test_tour_distance_and_duration_fields(self):
         """Test that distance_meters and duration_minutes fields are stored and serialized correctly."""

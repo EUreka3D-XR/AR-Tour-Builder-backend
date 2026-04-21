@@ -5,11 +5,11 @@ from rest_framework.views import APIView
 from rest_framework.authtoken.models import Token
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample, OpenApiResponse
 from django.contrib.auth import authenticate, login
+from django.conf import settings
+import requests
+
 from ..models.user import User
 from ..serializers import UserSerializer, LoginSerializer, SignupSerializer, CurrentUserSerializer
-
-from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_exempt
 
 @extend_schema(
     description="Retrieve a list of all active and inactive users in the system.",
@@ -81,6 +81,9 @@ class LoginView(APIView):
             return Response({'error': 'User account is disabled.'}, status=status.HTTP_403_FORBIDDEN)
 
         token, created = Token.objects.get_or_create(user=user)
+
+        # Also create a Django session so the user can access the admin panel
+        login(request, user)
 
         return Response({
             'token': token.key,
@@ -196,11 +199,11 @@ class SignupView(generics.CreateAPIView):
             ]
         )
     },
-    description="Retrieve details about the currently authenticated user.",
-    summary="Get Current User",
+    description="Retrieve or update details about the currently authenticated user. PATCH supports 'name' and 'username' only; 'email' is read-only.",
+    summary="Get or Update Current User",
     tags=['User']
 )
-class CurrentUserView(generics.RetrieveAPIView):
+class CurrentUserView(generics.RetrieveUpdateAPIView):
     serializer_class = CurrentUserSerializer
     permission_classes = [IsAuthenticated]
 
@@ -210,6 +213,44 @@ class CurrentUserView(generics.RetrieveAPIView):
     def retrieve(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return Response({"error": "Unauthorized access."}, status=status.HTTP_401_UNAUTHORIZED)
+            
+        # OIDC Introspection Check
+        # The frontend hits this endpoint every 5 minutes. We check if they have an active EGI token.
+        from django.core.cache import cache
+        from rest_framework.authtoken.models import Token
+        import requests
+        from django.conf import settings
+        
+        # We need the Token object to get the key used in the cache
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if auth_header.startswith('Token '):
+            local_token_key = auth_header.split(' ')[1]
+            egi_access_token = cache.get(f"egi_token_{local_token_key}")
+            
+            if egi_access_token:
+                try:
+                    # Ping EGI check-in
+                    userinfo_response = requests.get(
+                        settings.OIDC_USERINFO_ENDPOINT,
+                        headers={'Authorization': f'Bearer {egi_access_token}'},
+                        timeout=5
+                    )
+                    
+                    # If EGI tells us the token is dead or user is revoked, log them out locally.
+                    if userinfo_response.status_code == 401:
+                        print(f"--- Introspection Failed: EGI Revoked Access for {request.user.email} ---")
+                        # Delete local session/token
+                        Token.objects.filter(key=local_token_key).delete()
+                        return Response(
+                            {"error": "OIDC Session Revoked. Please login again."}, 
+                            status=status.HTTP_401_UNAUTHORIZED
+                        )
+                        
+                except requests.RequestException:
+                    # If EGI is temporarily offline, we don't aggressively log out users here.
+                    # We only log out on an explicit 401 unauthorized.
+                    pass
+
         return super().retrieve(request, *args, **kwargs)
 
 
@@ -217,9 +258,10 @@ class CurrentUserView(generics.RetrieveAPIView):
     request={
         'type': 'object',
         'properties': {
-            'id_token': {'type': 'string', 'description': 'OpenID Connect ID token from EGI Check-In'}
+            'code': {'type': 'string', 'description': 'Authorization code from EGI Check-In'},
+            'state': {'type': 'string', 'description': 'State parameter passed back by EGI Check-In'}
         },
-        'required': ['id_token']
+        'required': ['code']
     },
     responses={
         200: OpenApiResponse(
@@ -252,7 +294,7 @@ class CurrentUserView(generics.RetrieveAPIView):
             ]
         ),
         400: OpenApiResponse(
-            description="Invalid request or token",
+            description="Invalid request or failed token exchange",
             response={
                 'type': 'object',
                 'properties': {
@@ -262,8 +304,8 @@ class CurrentUserView(generics.RetrieveAPIView):
             },
             examples=[
                 OpenApiExample(
-                    'Missing Token',
-                    value={'error': 'id_token is required'},
+                    'Missing Code',
+                    value={'error': 'code is required'},
                     response_only=True,
                     media_type='application/json'
                 )
@@ -289,34 +331,128 @@ class CurrentUserView(generics.RetrieveAPIView):
         )
     },
 
-    description="Authenticate using an OpenID Connect ID token from EGI Check-In. "
-                "The backend will verify the token, and create or retrieve the user based on their email address. "
-                "Returns an authentication token for subsequent API requests.",
-    summary="OIDC Login",
+    description="Authenticate using an OpenID Connect authorization code from EGI Check-In. "
+                "The backend will exchange the code for tokens, verify the ID token, and create or retrieve "
+                "the user based on their email address. Returns an authentication token for subsequent API requests.",
+    summary="OIDC Login Code Exchange",
     tags=['User']
 )
 class OIDCLoginView(APIView):
     """
-    Authenticate users via OpenID Connect (EGI Check-In).
-    Accepts an ID token, verifies it, and returns a Django token for API access.
+    Authenticate users via OpenID Connect (EGI Check-In) Authorization Code Flow.
+    Accepts an authorization code, exchanges it for an ID token, verifies it, 
+    and returns a Django token for API access.
     """
     permission_classes = []
 
     def post(self, request, *args, **kwargs):
-        id_token = request.data.get('id_token')
+        code = request.data.get('code')
+        code_verifier = request.data.get('code_verifier')
 
-        if not id_token:
+        if not code:
             return Response(
-                {'error': 'id_token is required'},
+                {'error': 'code is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Authenticate using OIDC backend
-        user = authenticate(request=request, id_token=id_token)
+        if not code_verifier:
+            return Response(
+                {'error': 'codeVerifier is required for PKCE flow'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # The redirect_uri must match exactly what was sent in the initial auth request.
+        # We reconstruct the origin since the frontend doesn't send it explicitly,
+        # but the standard approach is to use the host of the incoming request.
+        origin = request.headers.get('Origin') or request.headers.get('Referer')
+        if origin:
+            # Strip trailing slash if present, then append the frontend route
+            redirect_uri = f"{origin.rstrip('/')}/egi-login"
+        else:
+            # Fallback for local testing if headers are missing
+            redirect_uri = "http://localhost:3000/egi-login"
+
+        # Exchange the authorization code for tokens (with PKCE support)
+        token_data = {
+            'grant_type': 'authorization_code',
+            'client_id': settings.OIDC_CLIENT_ID,
+            'client_secret': settings.OIDC_CLIENT_SECRET,
+            'code': code,
+            'code_verifier': code_verifier,
+            'redirect_uri': redirect_uri,
+        }
+
+        try:
+            token_response = requests.post(
+                settings.OIDC_TOKEN_ENDPOINT,
+                data=token_data,
+                timeout=10
+            )
+            token_response.raise_for_status()
+            tokens = token_response.json()
+
+            # Debug: Print the entire token response
+            import json
+            print(f"\n=== DEBUG: Token Endpoint Response ===")
+            print(f"Status Code: {token_response.status_code}")
+            print(f"Response Body:")
+            print(json.dumps(tokens, indent=2))
+            print(f"======================================\n")
+
+        except requests.RequestException as e:
+            error_msg = 'Failed to exchange authorization code for tokens'
+            print(f"--- OIDCLoginView Token Exchange Error: {e} ---")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"--- Response body: {e.response.text} ---")
+                try:
+                    error_msg = e.response.json().get('error_description', error_msg)
+                except ValueError:
+                    pass
+
+            return Response(
+                {'error': error_msg},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        id_token = tokens.get('id_token')
+        access_token = tokens.get('access_token')
+        if not id_token or not access_token:
+            return Response(
+                {'error': 'Token response missing id_token or access_token'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Fetch the user profile and entitlements from the UserInfo endpoint
+        try:
+            userinfo_response = requests.get(
+                settings.OIDC_USERINFO_ENDPOINT,
+                headers={'Authorization': f'Bearer {access_token}'},
+                timeout=10
+            )
+            userinfo_response.raise_for_status()
+            userinfo = userinfo_response.json()
+            
+            # Print the entire userinfo payload to stdout for debugging entitlements
+            import json
+            print(f"\\n--- DEBUG: UserInfo payload from EGI ---")
+            print(json.dumps(userinfo, indent=2))
+            print(f"-----------------------------------------\\n")
+            
+        except requests.RequestException as e:
+            print(f"--- OIDCLoginView UserInfo Error: {e} ---")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"--- Response body: {e.response.text} ---")
+            return Response(
+                {'error': 'Failed to fetch user profile from EGI Check-In'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Authenticate using OIDC backend (verifies the id_token signature and claims, applies entitlements)
+        user = authenticate(request=request, id_token=id_token, userinfo=userinfo)
 
         if user is None:
             return Response(
-                {'error': 'Invalid or expired token'},
+                {'error': 'Invalid token or user creation failed'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -326,8 +462,16 @@ class OIDCLoginView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
+        # Log the user into the Django session so they can access the Admin panel
+        login(request, user)
+
         # Create or get token for the user
         token, created = Token.objects.get_or_create(user=user)
+
+        # Cache the external EGI access token for introspection, tying it to the local DRF token.
+        # Check-In tokens usually expire in 1 hour. We cache it so the /me endpoint can use it.
+        from django.core.cache import cache
+        cache.set(f"egi_token_{token.key}", access_token, timeout=3600)
 
         # Serialize user data
         user_serializer = CurrentUserSerializer(user)

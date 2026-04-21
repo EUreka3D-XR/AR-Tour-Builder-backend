@@ -1,7 +1,7 @@
 from django.db import models
 from .poi import POI
 from .asset import Asset
-from .fields import MultilingualTextField, Georeference, LinkedAsset, is_valid_georeference
+from .fields import MultilingualTextField, Georeference, LinkedAsset, ModelTransform, is_valid_georeference
 import json
 
 class POIAsset(models.Model):
@@ -32,8 +32,22 @@ class POIAsset(models.Model):
     # Optional linked asset with multilingual title and URL
     linked_asset = LinkedAsset(null=True, blank=True, help_text="Multilingual linked asset with title and URL")
 
+    # Optional 3D transform for AR placement
+    model_transform = ModelTransform(null=True, blank=True, help_text="3D transform with position, rotation, and scale (optional)")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    DEFAULT_MODEL_TRANSFORM = {
+        'position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+        'rotation': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+        'scale': {'x': 1.0, 'y': 1.0, 'z': 1.0},
+    }
+
+    def save(self, *args, **kwargs):
+        if self.model_transform is None:
+            self.model_transform = self.DEFAULT_MODEL_TRANSFORM
+        super().save(*args, **kwargs)
 
     @property
     def is_georeferenced(self):

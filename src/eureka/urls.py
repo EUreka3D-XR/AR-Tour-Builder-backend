@@ -21,7 +21,8 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, Sp
 from .views import *
 from .views.user_views import OIDCLoginView
 from .views.project_views import (
-    ProjectListCreateView, ProjectRetrieveUpdateDestroyView, ProjectMoveGroupView, ProjectPopulatedView, ProjectMembersView
+    ProjectListCreateView, ProjectRetrieveUpdateDestroyView, ProjectMoveGroupView, ProjectPopulatedView, ProjectMembersView,
+    ProjectMemberAddView, ProjectMemberRemoveView
 )
 from .views.public_views import PublicProjectListView, PublicProjectPopulatedView
 from .views.tour_views import TourListCreateView, TourRetrieveUpdateView, PublishTourView, UnpublishTourView, PublishedTourView
@@ -29,10 +30,17 @@ from .views.asset_views import AssetListCreateView, AssetRetrieveUpdateDestroyVi
 from .views.poi_views import POIListCreateView, POIRetrieveUpdateDestroyView
 from .views.poi_asset_views import POIAssetListCreateView, POIAssetRetrieveUpdateDestroyView, POIAssetSetPrimaryView, POIAssetUnsetPrimaryView
 from .views.example_views import ExampleFileView
+from .views.health_views import HealthCheckView
+from .views.image_views import ImageUploadView, ImageListView, ImageRetrieveView
+
+from django.shortcuts import redirect
 
 urlpatterns = [
     # Admin interface
-    path('admin/', admin.site.urls),
+    path('api/admin/', admin.site.urls),
+
+    # Health check
+    path('api/health', HealthCheckView.as_view(), name='health-check'),
 
     # API Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
@@ -64,6 +72,8 @@ urlpatterns = [
     path('api/projects/<int:pk>/populated', ProjectPopulatedView.as_view(), name='project-populated'),
     path('api/projects/<int:pk>/move_group', ProjectMoveGroupView.as_view(), name='project-move-group'),
     path('api/projects/<int:pk>/members', ProjectMembersView.as_view(), name='project-members'),
+    path('api/projects/<int:pk>/members/add', ProjectMemberAddView.as_view(), name='project-member-add'),
+    path('api/projects/<int:pk>/members/remove', ProjectMemberRemoveView.as_view(), name='project-member-remove'),
 
     # Assets
     path('api/assets', AssetListCreateView.as_view(), name='asset-list-create'),
@@ -86,6 +96,14 @@ urlpatterns = [
     path('api/poi-assets/<int:pk>/set-primary', POIAssetSetPrimaryView.as_view(), name='poi-asset-set-primary'),
     path('api/poi-assets/<int:pk>/unset-primary', POIAssetUnsetPrimaryView.as_view(), name='poi-asset-unset-primary'),
 
+    # Images
+    path('api/images/upload', ImageUploadView.as_view(), name='image-upload'),
+    path('api/images', ImageListView.as_view(), name='image-list'),
+    path('api/images/<int:pk>', ImageRetrieveView.as_view(), name='image-detail'),
+
     # Example Files
     path('api/examples/<path:file_path>', ExampleFileView.as_view(), name='example-file'),
 ]
+
+from django.contrib.staticfiles.urls import staticfiles_urlpatterns
+urlpatterns += staticfiles_urlpatterns()

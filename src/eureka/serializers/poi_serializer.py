@@ -33,11 +33,21 @@ class POISerializer(serializers.ModelSerializer):
 
     assets = serializers.SerializerMethodField(read_only=True)
     stats = serializers.SerializerMethodField(read_only=True)
+    thumbnail_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = POI
-        fields = ['id', 'tour', 'title', 'description', 'coordinates', 'radius', 'external_links', 'order', 'stats', 'assets', 'created_at', 'updated_at']
-        read_only_fields = ['tour', 'order', 'created_at', 'updated_at']
+        fields = ['id', 'tour', 'title', 'description', 'coordinates', 'radius', 'external_links', 'thumbnail', 'thumbnail_url', 'order', 'stats', 'assets', 'created_at', 'updated_at']
+        read_only_fields = ['tour', 'order', 'thumbnail_url', 'created_at', 'updated_at']
+
+    def get_thumbnail_url(self, obj):
+        """Generate the public URL for the thumbnail image if it exists."""
+        if not obj.thumbnail:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(f'/api/images/{obj.thumbnail.id}')
+        return f'/api/images/{obj.thumbnail.id}'
 
     def get_assets(self, obj):
         """Serialize assets with context (for locale support)"""

@@ -8,6 +8,7 @@ from ..models.tour import Tour
 from ..serializers.project_serializer import ProjectSerializer
 from ..serializers.nested_serializers import ProjectPopulatedSerializer
 from ..serializers.user_serializer import UserLiteSerializer
+from ..serializers.group_serializer import GroupMemberManagementSerializer
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample, OpenApiResponse
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.exceptions import PermissionDenied
@@ -34,7 +35,7 @@ from .mixins import LocaleContextMixin, TourPrefetchMixin, POIPrefetchMixin
 )
 @extend_schema(
     methods=['POST'],
-    description="Create a new project. If group_id is provided and user has access to that group, the project will be created there. Otherwise, it will be created in the user's personal group.",
+    description="Create a new project. A dedicated group is automatically created for this project and the creator is added to it.",
     summary="Create Project",
     tags=['Projects'],
     request={
@@ -43,7 +44,6 @@ from .mixins import LocaleContextMixin, TourPrefetchMixin, POIPrefetchMixin
             'properties': {
                 'title': {'type': 'string', 'description': 'Project title'},
                 'description': {'type': 'string', 'description': 'Project description (optional)'},
-                'group_id': {'type': 'integer', 'description': 'Group ID where to create the project (optional, defaults to personal group)'},
                 'locales': {
                     'type': 'array',
                     'items': {'type': 'string'},
@@ -55,19 +55,6 @@ from .mixins import LocaleContextMixin, TourPrefetchMixin, POIPrefetchMixin
     },
     responses={
         201: ProjectSerializer,
-        400: OpenApiResponse(
-            description="Bad request",
-            response={
-                'type': 'object',
-                'properties': {
-                    'detail': {'type': 'string', 'description': 'Error message'}
-                },
-                'required': ['detail']
-            },
-            examples=[
-                OpenApiExample('Invalid Group', value={'detail': 'You do not have access to the specified group.'})
-            ]
-        )
     }
 )
 class ProjectListCreateView(TourPrefetchMixin, LocaleContextMixin, generics.ListCreateAPIView):
@@ -96,21 +83,14 @@ class ProjectListCreateView(TourPrefetchMixin, LocaleContextMixin, generics.List
         return ProjectSerializer
 
     def perform_create(self, serializer):
+        from django.db import transaction
+        import uuid
         user = self.request.user
-        group_id = self.request.data.get('group_id')
 
-        if group_id:
-            # Check if user has access to the specified group
-            try:
-                target_group = Group.objects.get(pk=group_id)
-                if target_group not in user.groups.all():
-                    raise PermissionDenied('You do not have access to the specified group.')
-                group = target_group
-            except ObjectDoesNotExist:
-                raise PermissionDenied('Group not found.')
-        else:
-            # Use personal group as default
-            group = user.personal_group
+        with transaction.atomic():
+            group_name = f'project_{uuid.uuid4().hex[:12]}'
+            group = Group.objects.create(name=group_name)
+            user.groups.add(group)
 
         serializer.save(group=group, created_by=user)
 
@@ -202,22 +182,6 @@ class ProjectRetrieveUpdateDestroyView(TourPrefetchMixin, LocaleContextMixin, ge
         )
 
     def destroy(self, request, *args, **kwargs):
-        project = self.get_object()
-        
-        # Check if project has associated tours
-        if hasattr(project, 'tour_set') and project.tour_set.exists():
-            return Response(
-                {'detail': 'Cannot delete a project with existing tours.'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Check if project has associated assets
-        if hasattr(project, 'asset_set') and project.asset_set.exists():
-            return Response(
-                {'detail': 'Cannot delete a project with existing assets.'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
         return super().destroy(request, *args, **kwargs)
 
 @extend_schema(
@@ -476,3 +440,84 @@ class ProjectMembersView(generics.GenericAPIView):
                 {'detail': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+@extend_schema(
+    description="Add a user to a project by username or email. Only existing project members can add new members.",
+    summary="Add Project Member",
+    tags=['Projects'],
+    request={
+        'application/json': {
+            'type': 'object',
+            'properties': {
+                'user_identifier': {'type': 'string', 'description': 'Username or email of the user to add'}
+            },
+            'required': ['user_identifier']
+        }
+    },
+    responses={
+        200: OpenApiResponse(description="User added successfully"),
+        400: OpenApiResponse(description="User already a member or not found"),
+        403: OpenApiResponse(description="Not a member of this project"),
+        404: OpenApiResponse(description="Project not found"),
+    }
+)
+class ProjectMemberAddView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        user_groups = request.user.groups.all()
+        project = Project.objects.filter(pk=pk, group__in=user_groups).select_related('group').first()  # type: ignore[attr-defined]
+        if not project:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = GroupMemberManagementSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user_to_add = serializer.validated_data['user_identifier']  # type: ignore
+
+        if project.group.user_set.filter(pk=user_to_add.pk).exists():
+            return Response({'detail': 'User is already a member of this project.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        project.group.user_set.add(user_to_add)
+        return Response({'detail': f'User {user_to_add.username} added to project.'}, status=status.HTTP_200_OK)
+
+@extend_schema(
+    description="Remove a user from a project by username or email. Only existing project members can remove members. A user cannot be removed if it is their only project group.",
+    summary="Remove Project Member",
+    tags=['Projects'],
+    request={
+        'application/json': {
+            'type': 'object',
+            'properties': {
+                'user_identifier': {'type': 'string', 'description': 'Username or email of the user to remove'}
+            },
+            'required': ['user_identifier']
+        }
+    },
+    responses={
+        200: OpenApiResponse(description="User removed successfully"),
+        400: OpenApiResponse(description="User not a member or cannot be removed"),
+        403: OpenApiResponse(description="Not a member of this project"),
+        404: OpenApiResponse(description="Project not found"),
+    }
+)
+class ProjectMemberRemoveView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        user_groups = request.user.groups.all()
+        project = Project.objects.filter(pk=pk, group__in=user_groups).select_related('group').first()  # type: ignore[attr-defined]
+        if not project:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = GroupMemberManagementSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user_to_remove = serializer.validated_data['user_identifier']  # type: ignore
+
+        if not project.group.user_set.filter(pk=user_to_remove.pk).exists():
+            return Response({'detail': 'User is not a member of this project.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if user_to_remove.personal_group == project.group:
+            return Response({'detail': 'A user cannot be removed from their personal group.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        project.group.user_set.remove(user_to_remove)
+        return Response({'detail': f'User {user_to_remove.username} removed from project.'}, status=status.HTTP_200_OK)

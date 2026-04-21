@@ -23,7 +23,8 @@ services:
       - "8000:8000"
     environment:
       DEBUG: "True"
-      SECRET_KEY: 'eureka_secret_1' # Replace with a strong secret key
+      ALLOWED_HOSTS: "*"
+      SECRET_KEY: "eureka_secret_1" # Replace with a strong secret key
       DATABASE_URL: postgres://eureka:eureka@db:5432/eureka
       PYTHONUNBUFFERED: 1
     depends_on:
@@ -35,5 +36,3 @@ volumes:
 networks:
   eureka-network:
     driver: bridge
-
-  

@@ -30,7 +30,8 @@ class TestPOIAsset(TestCase):
             title={'locales': {'en': 'Test POI'}},
             description={'locales': {'en': 'A test POI'}},
             coordinates={'lat': 37.9838, 'long': 23.7275},
-            radius=10
+            radius=10,
+            order=1
         )
         self.source_asset = Asset.objects.create(
             project=self.project,
@@ -285,8 +286,42 @@ class TestPOIAsset(TestCase):
         with self.assertRaises(POIAsset.DoesNotExist):
             POIAsset.objects.get(id=poi_asset_id)
 
+    def test_model_transform_auto_set_on_creation(self):
+        """Test that model_transform is auto-set to defaults when null on creation."""
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'Test Asset'}},
+            type='model3d',
+            url={'locales': {'en': '/test/model.glb'}}
+        )
+
+        self.assertIsNotNone(poi_asset.model_transform)
+        self.assertEqual(poi_asset.model_transform['position'], {'x': 0.0, 'y': 0.0, 'z': 0.0})
+        self.assertEqual(poi_asset.model_transform['rotation'], {'x': 0.0, 'y': 0.0, 'z': 0.0})
+        self.assertEqual(poi_asset.model_transform['scale'], {'x': 1.0, 'y': 1.0, 'z': 1.0})
+
+    def test_model_transform_explicit_value_preserved(self):
+        """Test that an explicitly provided model_transform is not overridden."""
+        custom_transform = {
+            'position': {'x': 1.0, 'y': 2.0, 'z': 3.0},
+            'rotation': {'x': 0.0, 'y': 90.0, 'z': 0.0},
+            'scale': {'x': 2.0, 'y': 2.0, 'z': 2.0},
+        }
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'Test Asset'}},
+            type='model3d',
+            url={'locales': {'en': '/test/model.glb'}},
+            model_transform=custom_transform
+        )
+
+        self.assertEqual(poi_asset.model_transform['position'], {'x': 1.0, 'y': 2.0, 'z': 3.0})
+        self.assertEqual(poi_asset.model_transform['scale'], {'x': 2.0, 'y': 2.0, 'z': 2.0})
+
     def test_poi_asset_cascade_delete_with_source_asset(self):
-        """Test that POI asset is deleted when source asset is deleted."""
+        """Test that POI asset source_asset is set to null when source asset is deleted."""
         poi_asset = POIAsset.objects.create(
             poi=self.poi,
             source_asset=self.source_asset,
@@ -298,5 +333,5 @@ class TestPOIAsset(TestCase):
         poi_asset_id = poi_asset.id
         self.source_asset.delete()
 
-        with self.assertRaises(POIAsset.DoesNotExist):
-            POIAsset.objects.get(id=poi_asset_id)
+        poi_asset.refresh_from_db()
+        self.assertIsNone(poi_asset.source_asset)

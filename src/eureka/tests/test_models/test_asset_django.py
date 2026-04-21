@@ -53,7 +53,7 @@ class TestAsset(TestCase):
         json_data = json.loads(str_repr)
         self.assertEqual(json_data['title']['locales']['en'], 'Test Asset')
         self.assertEqual(json_data['type'], AssetType.IMAGE)
-        self.assertIsNone(json_data['description'])
+        self.assertEqual(json_data['description'], {})
 
     def test_asset_with_georeference(self):
         """Test creating an asset with optional georeference."""

@@ -13,11 +13,31 @@ class ProjectStatsBaseSerializer(serializers.ModelSerializer):
     total_pois = serializers.SerializerMethodField(read_only=True)
     total_members = serializers.SerializerMethodField(read_only=True)
     created_by = UserLiteSerializer(read_only=True)
+    logo_url = serializers.SerializerMethodField(read_only=True)
+    cover_photo_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Project
-        fields = ['id', 'group', 'created_by', 'title', 'description', 'locales', 'center', 'total_tours', 'total_pois', 'total_members', 'created_at', 'updated_at']
-        read_only_fields = ['group', 'created_by', 'created_at', 'updated_at']
+        fields = ['id', 'group', 'created_by', 'title', 'description', 'locales', 'logo', 'logo_url', 'cover_photo', 'cover_photo_url', 'center', 'total_tours', 'total_pois', 'total_members', 'created_at', 'updated_at']
+        read_only_fields = ['group', 'created_by', 'logo_url', 'cover_photo_url', 'created_at', 'updated_at']
+
+    def get_logo_url(self, obj):
+        """Generate the public URL for the logo image if it exists."""
+        if not obj.logo:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(f'/api/images/{obj.logo.id}')
+        return f'/api/images/{obj.logo.id}'
+
+    def get_cover_photo_url(self, obj):
+        """Generate the public URL for the cover photo if it exists."""
+        if not obj.cover_photo:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(f'/api/images/{obj.cover_photo.id}')
+        return f'/api/images/{obj.cover_photo.id}'
 
     def get_center(self, obj):
         """Calculate the project's center using the model method"""

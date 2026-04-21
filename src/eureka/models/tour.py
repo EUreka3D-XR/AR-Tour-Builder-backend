@@ -18,6 +18,10 @@ class Tour(models.Model):
     duration_minutes = models.PositiveIntegerField(null=True, blank=True, help_text="Estimated duration of the tour in minutes")
     locales = models.JSONField(default=list, help_text="Supported language codes for this tour, e.g. ['en', 'fr', 'it']")
     guided = models.BooleanField(default=False, help_text="Whether this tour is guided")
+
+    # Cover photo
+    cover_photo = models.ForeignKey('Image', on_delete=models.SET_NULL, null=True, blank=True, related_name='tour_covers')
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

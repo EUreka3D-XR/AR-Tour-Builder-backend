@@ -35,6 +35,10 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 # Disable automatic slash appending for URLs
 APPEND_SLASH = False
 
+# Override Django's default /accounts/login/ redirect so the admin panel
+# redirects to the correct path that nginx proxies to the backend.
+LOGIN_URL = '/api/admin/login/'
+
 
 # Application definition
 
@@ -126,10 +130,34 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 # OpenID Connect Configuration (EGI Check-In)
-OIDC_ISSUER = 'https://aai.egi.eu/auth/realms/egi'
-OIDC_JWKS_URI = 'https://aai.egi.eu/auth/realms/egi/protocol/openid-connect/certs'
-# OIDC_CLIENT_ID = 'your-client-id-here'  # TODO: Set this in production or via environment variable
+OIDC_WELL_KNOWN_URL = os.environ.get('OIDC_WELL_KNOWN_URL', 'https://aai-demo.egi.eu/auth/realms/egi/.well-known/openid-configuration')
 
+import requests
+try:
+    _oidc_config = requests.get(OIDC_WELL_KNOWN_URL, timeout=5).json()
+    OIDC_ISSUER = _oidc_config.get('issuer')
+    OIDC_JWKS_URI = _oidc_config.get('jwks_uri')
+    OIDC_TOKEN_ENDPOINT = _oidc_config.get('token_endpoint')
+    OIDC_USERINFO_ENDPOINT = _oidc_config.get('userinfo_endpoint')
+except Exception as e:
+    import warnings
+    warnings.warn(f"Could not fetch OIDC discovery configuration from {OIDC_WELL_KNOWN_URL}: {e}")
+    # Fallbacks just in case the app is started entirely offline or the Check-In server is temporarily unreachable
+    OIDC_ISSUER = os.environ.get('OIDC_ISSUER', 'https://aai-demo.egi.eu/auth/realms/egi')
+    OIDC_JWKS_URI = os.environ.get('OIDC_JWKS_URI', 'https://aai-demo.egi.eu/auth/realms/egi/protocol/openid-connect/certs')
+    OIDC_TOKEN_ENDPOINT = os.environ.get('OIDC_TOKEN_ENDPOINT', 'https://aai-demo.egi.eu/auth/realms/egi/protocol/openid-connect/token')
+    OIDC_USERINFO_ENDPOINT = os.environ.get('OIDC_USERINFO_ENDPOINT', 'https://aai-demo.egi.eu/auth/realms/egi/protocol/openid-connect/userinfo')
+
+
+OIDC_CLIENT_ID = os.environ.get('OIDC_CLIENT_ID', 'acf0e9bd-f429-4595-9fe4-ff123fed1411')
+OIDC_CLIENT_SECRET = os.environ.get('OIDC_CLIENT_SECRET', '')
+
+# List of emails that should be automatically granted admin (superuser) access
+ADMIN_EMAILS = [email.strip() for email in os.environ.get('ADMIN_EMAILS', '').split(',') if email.strip()]
+
+# EGI entitlement required for login access. If set, users must have an eduperson_entitlement
+# that contains this string. Leave empty to allow all EGI users.
+EGI_ENTITLEMENT = os.environ.get('EGI_ENTITLEMENT', '')
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
@@ -142,11 +170,19 @@ USE_I18N = True
 
 USE_TZ = True
 
+# Cache configuration - Use database cache so multiple Gunicorn workers share the same state
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'eureka_cache_table',
+    }
+}
+
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/api/static/'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -156,7 +192,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework.authentication.TokenAuthentication',
-        'rest_framework.authentication.SessionAuthentication', # For browser-based auth
+        # SessionAuthentication removed - Django admin has its own auth system
+        # This prevents CSRF conflicts with token-based API authentication
         'rest_framework.authentication.BasicAuthentication',   # For basic auth
     ),
     'DEFAULT_PERMISSION_CLASSES': (

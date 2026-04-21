@@ -78,9 +78,11 @@ class SignupSerializer(serializers.ModelSerializer):
 class CurrentUserSerializer(serializers.ModelSerializer):
     """
     Serializer for the currently authenticated user's details.
+    Supports PATCH for name and username only; email is read-only.
     """
-    user_id = serializers.CharField(source='id')  # Map id to user_id
+    user_id = serializers.CharField(source='id', read_only=True)
 
     class Meta:
         model = User
-        fields = ('user_id', 'username', 'email', 'name') 
+        fields = ('user_id', 'username', 'email', 'name')
+        read_only_fields = ('email',)

@@ -59,7 +59,7 @@ class TestPOI(TestCase):
         self.assertEqual(json_data['title']['locales']['en'], 'Test POI')
         self.assertEqual(json_data['coordinates']['lat'], 37.9838)
         self.assertEqual(json_data['coordinates']['long'], 23.7275)
-        self.assertIsNone(json_data['description'])
+        self.assertEqual(json_data['description'], {})
 
     def test_poi_order_sequence(self):
         """Test POI order field functionality."""

@@ -3,7 +3,7 @@ from ..models.poi import POI
 from ..models.tour import Tour
 from ..models.project import Project
 from ..models.poi_asset import POIAsset
-from .fields import MultilingualTextField, Coordinates, Georeference, BoundingBox, ExternalLinks, LinkedAsset
+from .fields import MultilingualTextField, Coordinates, Georeference, BoundingBox, ExternalLinks, LinkedAsset, ModelTransform
 from .user_serializer import UserLiteSerializer
 
 
@@ -20,13 +20,14 @@ class POIAssetNestedSerializer(serializers.ModelSerializer):
     url = MultilingualTextField()
     georeference = Georeference(required=False, allow_null=True)
     linked_asset = LinkedAsset(required=False, allow_null=True)
+    model_transform = ModelTransform(required=False, allow_null=True)
     is_georeferenced = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = POIAsset
         fields = [
             'id', 'title', 'description', 'type', 'url',
-            'priority', 'view_in_ar', 'ar_placement', 'georeference', 'is_georeferenced', 'linked_asset'
+            'priority', 'view_in_ar', 'ar_placement', 'georeference', 'is_georeferenced', 'linked_asset', 'model_transform'
         ]
 
 
@@ -44,13 +45,22 @@ class POINestedSerializer(serializers.ModelSerializer):
     external_links = ExternalLinks(required=False, allow_null=True)
     assets = serializers.SerializerMethodField(read_only=True)
     stats = serializers.SerializerMethodField(read_only=True)
+    thumbnail_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = POI
         fields = [
             'id', 'title', 'description', 'coordinates', 'radius',
-            'external_links', 'order', 'stats', 'assets'
+            'external_links', 'thumbnail', 'thumbnail_url', 'order', 'stats', 'assets'
         ]
+
+    def get_thumbnail_url(self, obj):
+        if not obj.thumbnail:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(f'/api/images/{obj.thumbnail.id}')
+        return f'/api/images/{obj.thumbnail.id}'
 
     def get_assets(self, obj):
         """Serialize assets with context (for locale support)"""
@@ -112,14 +122,23 @@ class TourNestedSerializer(serializers.ModelSerializer):
     pois = serializers.SerializerMethodField(read_only=True)
     total_pois = serializers.SerializerMethodField(read_only=True)
     total_assets = serializers.SerializerMethodField(read_only=True)
+    cover_photo_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Tour
         fields = [
             'id', 'title', 'description', 'is_public', 'bounding_box', 'center',
             'distance_meters', 'duration_minutes', 'locales', 'guided',
-            'total_pois', 'total_assets', 'pois'
+            'cover_photo', 'cover_photo_url', 'total_pois', 'total_assets', 'pois'
         ]
+
+    def get_cover_photo_url(self, obj):
+        if not obj.cover_photo:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(f'/api/images/{obj.cover_photo.id}')
+        return f'/api/images/{obj.cover_photo.id}'
 
     def get_pois(self, obj):
         """Serialize POIs with context (for locale support)"""
@@ -157,14 +176,33 @@ class ProjectPopulatedSerializer(serializers.ModelSerializer):
     total_tours = serializers.SerializerMethodField(read_only=True)
     total_pois = serializers.SerializerMethodField(read_only=True)
     group_members = serializers.SerializerMethodField(read_only=True)
+    logo_url = serializers.SerializerMethodField(read_only=True)
+    cover_photo_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Project
         fields = [
-            'id', 'created_by', 'title', 'description', 'created_at', 'updated_at',
-            'locales', 'center', 'total_tours', 'total_pois', 'group_members', 'tours'
+            'id', 'group', 'created_by', 'title', 'description', 'created_at', 'updated_at',
+            'locales', 'logo', 'logo_url', 'cover_photo', 'cover_photo_url',
+            'center', 'total_tours', 'total_pois', 'group_members', 'tours'
         ]
-        read_only_fields = ['created_by', 'created_at', 'updated_at']
+        read_only_fields = ['created_by', 'created_at', 'updated_at', 'logo_url', 'cover_photo_url']
+
+    def get_logo_url(self, obj):
+        if not obj.logo:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(f'/api/images/{obj.logo.id}')
+        return f'/api/images/{obj.logo.id}'
+
+    def get_cover_photo_url(self, obj):
+        if not obj.cover_photo:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(f'/api/images/{obj.cover_photo.id}')
+        return f'/api/images/{obj.cover_photo.id}'
 
     def get_center(self, obj):
         """Calculate the project's center using the model method"""

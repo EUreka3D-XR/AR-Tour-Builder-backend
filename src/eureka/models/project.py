@@ -13,6 +13,11 @@ class Project(models.Model):
     description = MultilingualTextField(blank=True, null=True)  # Multilingual description
     # Add other project-level fields as needed
     locales = models.JSONField(default=list, help_text="Supported language codes for this project, e.g. ['en', 'fr', 'it']")
+
+    # Images
+    logo = models.ForeignKey('Image', on_delete=models.SET_NULL, null=True, blank=True, related_name='project_logos')
+    cover_photo = models.ForeignKey('Image', on_delete=models.SET_NULL, null=True, blank=True, related_name='project_covers')
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

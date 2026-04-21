@@ -29,7 +29,8 @@ class TestPOIAssetSerializer(TestCase):
             title={'locales': {'en': 'Test POI'}},
             description={'locales': {'en': 'A test POI'}},
             coordinates={'lat': 37.9838, 'long': 23.7275},
-            radius=10
+            radius=10,
+            order=1
         )
         self.source_asset = Asset.objects.create(
             project=self.project,
@@ -277,6 +278,107 @@ class TestPOIAssetSerializer(TestCase):
         self.assertTrue(serializer.is_valid())
         updated_asset = serializer.save()
         self.assertEqual(updated_asset.spawn_radius, 15.0)
+
+    def test_serializer_model_transform_default_when_null(self):
+        """Test that serializer returns default model_transform when field is null."""
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'Test Asset'}},
+            type='model3d',
+            url={'locales': {'en': '/test/model.glb'}}
+        )
+        # Force null in DB to simulate existing records
+        POIAsset.objects.filter(pk=poi_asset.pk).update(model_transform=None)
+        poi_asset.refresh_from_db()
+
+        serializer = POIAssetSerializer(poi_asset)
+        data = serializer.data
+
+        self.assertIsNotNone(data['model_transform'])
+        self.assertEqual(data['model_transform']['position'], {'x': 0.0, 'y': 0.0, 'z': 0.0})
+        self.assertEqual(data['model_transform']['rotation'], {'x': 0.0, 'y': 0.0, 'z': 0.0})
+        self.assertEqual(data['model_transform']['scale'], {'x': 1.0, 'y': 1.0, 'z': 1.0})
+
+    def test_serializer_model_transform_valid_input(self):
+        """Test that serializer accepts a valid model_transform structure."""
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'Test Asset'}},
+            type='model3d',
+            url={'locales': {'en': '/test/model.glb'}}
+        )
+        valid_transform = {
+            'position': {'x': 1.0, 'y': 2.0, 'z': 3.0},
+            'rotation': {'x': 0.0, 'y': 90.0, 'z': 0.0},
+            'scale': {'x': 2.0, 'y': 2.0, 'z': 2.0},
+        }
+        serializer = POIAssetSerializer(poi_asset, data={'model_transform': valid_transform}, partial=True)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        updated = serializer.save()
+        self.assertEqual(updated.model_transform, valid_transform)
+
+    def test_serializer_model_transform_rejects_missing_component(self):
+        """Test that serializer rejects a transform missing a required component."""
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'Test Asset'}},
+            type='model3d',
+            url={'locales': {'en': '/test/model.glb'}}
+        )
+        invalid_transform = {
+            'position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+            'rotation': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+            # missing 'scale'
+        }
+        serializer = POIAssetSerializer(poi_asset, data={'model_transform': invalid_transform}, partial=True)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('model_transform', serializer.errors)
+
+    def test_serializer_model_transform_rejects_wrong_type(self):
+        """Test that serializer rejects a transform with non-numeric vector values."""
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'Test Asset'}},
+            type='model3d',
+            url={'locales': {'en': '/test/model.glb'}}
+        )
+        invalid_transform = {
+            'position': {'x': 'not_a_number', 'y': 0.0, 'z': 0.0},
+            'rotation': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+            'scale': {'x': 1.0, 'y': 1.0, 'z': 1.0},
+        }
+        serializer = POIAssetSerializer(poi_asset, data={'model_transform': invalid_transform}, partial=True)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('model_transform', serializer.errors)
+
+    def test_serializer_model_transform_rejects_empty_dict(self):
+        """Test that serializer rejects an empty dict even when allow_null=True."""
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'Test Asset'}},
+            type='model3d',
+            url={'locales': {'en': '/test/model.glb'}}
+        )
+        serializer = POIAssetSerializer(poi_asset, data={'model_transform': {}}, partial=True)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('model_transform', serializer.errors)
+
+    def test_serializer_model_transform_accepts_null(self):
+        """Test that serializer accepts null for model_transform."""
+        poi_asset = POIAsset.objects.create(
+            poi=self.poi,
+            source_asset=self.source_asset,
+            title={'locales': {'en': 'Test Asset'}},
+            type='model3d',
+            url={'locales': {'en': '/test/model.glb'}}
+        )
+        serializer = POIAssetSerializer(poi_asset, data={'model_transform': None}, partial=True)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
 
     def test_serializer_spawn_radius_with_locale_context(self):
         """Test that spawn_radius is included when fetching with locale context."""

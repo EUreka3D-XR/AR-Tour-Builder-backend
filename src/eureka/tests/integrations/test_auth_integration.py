@@ -214,4 +214,49 @@ class TestAuthIntegration(TestCase):
         """
         self.client.credentials()  # Clear any credentials
         response = self.client.post('/api/auth/logout')
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED) 
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_patch_current_user_name_and_username(self):
+        """
+        Test that PATCH /api/auth/me updates name and username successfully.
+        """
+        signup_data = {
+            'username': 'patchuser',
+            'email': 'patchuser@example.com',
+            'password': 'password123',
+            'name': 'Old Name'
+        }
+        response = self.client.post('/api/auth/signup', signup_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {response.data['token']}")
+
+        response = self.client.patch('/api/auth/me', {'name': 'New Name', 'username': 'patchuser_updated'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['name'], 'New Name')
+        self.assertEqual(response.data['username'], 'patchuser_updated')
+        self.assertEqual(response.data['email'], 'patchuser@example.com')
+
+    def test_patch_current_user_email_is_readonly(self):
+        """
+        Test that PATCH /api/auth/me does not allow changing email.
+        """
+        signup_data = {
+            'username': 'emailtest',
+            'email': 'emailtest@example.com',
+            'password': 'password123',
+        }
+        response = self.client.post('/api/auth/signup', signup_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {response.data['token']}")
+
+        response = self.client.patch('/api/auth/me', {'email': 'newemail@example.com'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['email'], 'emailtest@example.com')
+
+    def test_patch_current_user_unauthenticated(self):
+        """
+        Test that PATCH /api/auth/me returns 401 when not authenticated.
+        """
+        self.client.credentials()
+        response = self.client.patch('/api/auth/me', {'name': 'Hacker'})
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

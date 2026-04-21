@@ -12,17 +12,27 @@ class TourStatsBaseSerializer(serializers.ModelSerializer):
     center = Coordinates(required=False, allow_null=True, read_only=True, help_text="Geographic center point of the tour")
     total_pois = serializers.SerializerMethodField(read_only=True)
     total_assets = serializers.SerializerMethodField(read_only=True)
+    cover_photo_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Tour
         fields = [
             'id', 'project', 'title', 'description', 'is_public',
             'bounding_box', 'center', 'distance_meters', 'duration_minutes', 'locales', 'guided',
-            'total_pois', 'total_assets', 'created_at', 'updated_at'
+            'cover_photo', 'cover_photo_url', 'total_pois', 'total_assets', 'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'project', 'bounding_box', 'center', 'created_at', 'updated_at'
+            'project', 'bounding_box', 'center', 'cover_photo_url', 'created_at', 'updated_at'
         ]
+
+    def get_cover_photo_url(self, obj):
+        """Generate the public URL for the cover photo if it exists."""
+        if not obj.cover_photo:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(f'/api/images/{obj.cover_photo.id}')
+        return f'/api/images/{obj.cover_photo.id}'
 
     def get_total_pois(self, obj):
         if hasattr(obj, 'total_pois'):

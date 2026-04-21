@@ -51,6 +51,9 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# test logging txt
+test_errors.txt
+
 # Translations
 *.mo
 *.pot
@@ -129,6 +132,7 @@ celerybeat.pid
 
 # Environments
 .env
+.env.local
 .venv
 env/
 venv/

@@ -276,3 +276,75 @@ class LinkedAsset(serializers.JSONField):
 
         # Return full multilingual object
         return data
+
+
+@extend_schema_field({
+    'type': 'object',
+    'properties': {
+        'position': {
+            'type': 'object',
+            'properties': {
+                'x': {'type': 'number', 'format': 'float'},
+                'y': {'type': 'number', 'format': 'float'},
+                'z': {'type': 'number', 'format': 'float'}
+            },
+            'required': ['x', 'y', 'z']
+        },
+        'rotation': {
+            'type': 'object',
+            'properties': {
+                'x': {'type': 'number', 'format': 'float'},
+                'y': {'type': 'number', 'format': 'float'},
+                'z': {'type': 'number', 'format': 'float'}
+            },
+            'required': ['x', 'y', 'z']
+        },
+        'scale': {
+            'type': 'object',
+            'properties': {
+                'x': {'type': 'number', 'format': 'float'},
+                'y': {'type': 'number', 'format': 'float'},
+                'z': {'type': 'number', 'format': 'float'}
+            },
+            'required': ['x', 'y', 'z']
+        }
+    },
+    'required': ['position', 'rotation', 'scale'],
+    'description': '3D model transform with position, rotation, and scale vectors (x, y, z).'
+})
+class ModelTransform(serializers.JSONField):
+    """
+    A custom serializer field for 3D model transforms.
+
+    Expected structure:
+    {
+        "position": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "scale":    {"x": 1.0, "y": 1.0, "z": 1.0}
+    }
+    """
+
+    def validate_empty_values(self, data):
+        # Reject empty dict — it is not a valid transform
+        if data == {}:
+            raise serializers.ValidationError("ModelTransform must not be empty.")
+        return super().validate_empty_values(data)
+
+    def to_internal_value(self, data):
+        value = super().to_internal_value(data)
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("ModelTransform must be a dictionary.")
+        for component in ("position", "rotation", "scale"):
+            if component not in value:
+                raise serializers.ValidationError(f"ModelTransform must have a '{component}' key.")
+            vec = value[component]
+            if not isinstance(vec, dict):
+                raise serializers.ValidationError(f"'{component}' must be a dictionary.")
+            for axis in ("x", "y", "z"):
+                if axis not in vec:
+                    raise serializers.ValidationError(f"'{component}' must have a '{axis}' key.")
+                if not isinstance(vec[axis], (int, float)):
+                    raise serializers.ValidationError(
+                        f"'{component}.{axis}' must be a number, got {type(vec[axis]).__name__}."
+                    )
+        return value

@@ -15,6 +15,9 @@ class POI(models.Model):
     # External links
     external_links = ExternalLinks(blank=True, null=True, help_text="Multilingual external links (quiz/blog)")
 
+    # Thumbnail image
+    thumbnail = models.ForeignKey('Image', on_delete=models.SET_NULL, null=True, blank=True, related_name='poi_thumbnails')
+
     order = models.PositiveIntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

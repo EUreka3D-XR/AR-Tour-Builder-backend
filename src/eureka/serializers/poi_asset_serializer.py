@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from eureka.models.poi_asset import POIAsset
-from .fields import MultilingualTextField, Georeference, LinkedAsset
+from .fields import MultilingualTextField, Georeference, LinkedAsset, ModelTransform
 
 class POIAssetSerializer(serializers.ModelSerializer):
     """
@@ -34,6 +34,19 @@ class POIAssetSerializer(serializers.ModelSerializer):
         help_text="Multilingual linked asset with title and URL structure"
     )
 
+    model_transform = ModelTransform(
+        required=False,
+        allow_null=True,
+        help_text="3D transform with position, rotation, and scale (optional)"
+    )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('model_transform') is None:
+            from eureka.models.poi_asset import POIAsset
+            data['model_transform'] = POIAsset.DEFAULT_MODEL_TRANSFORM
+        return data
+
     # Read-only fields for associations (handled by views)
     poi = serializers.PrimaryKeyRelatedField(read_only=True)
     source_asset = serializers.PrimaryKeyRelatedField(read_only=True)
@@ -42,6 +55,6 @@ class POIAssetSerializer(serializers.ModelSerializer):
     class Meta:
         model = POIAsset
         fields = [
-            'id', 'poi', 'source_asset', 'title', 'description', 'type', 'url', 'priority', 'view_in_ar', 'ar_placement', 'spawn_radius', 'georeference', 'is_georeferenced', 'linked_asset', 'created_at', 'updated_at'
+            'id', 'poi', 'source_asset', 'title', 'description', 'type', 'url', 'priority', 'view_in_ar', 'ar_placement', 'spawn_radius', 'georeference', 'is_georeferenced', 'linked_asset', 'model_transform', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at', 'is_georeferenced']
