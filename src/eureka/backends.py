@@ -99,8 +99,8 @@ class OIDCAuthenticationBackend(ModelBackend):
             return None
 
         # Entitlement gate: if EGI_ENTITLEMENT is configured, the user must hold it
-        required_entitlement = getattr(settings, 'EGI_ENTITLEMENT', '')
-        if required_entitlement:
+        required_entitlement = getattr(settings, 'EGI_ENTITLEMENT' )
+        if required_entitlement != 'None':
             entitlements = (userinfo or {}).get('entitlement', [])
             if isinstance(entitlements, str):
                 entitlements = [entitlements]

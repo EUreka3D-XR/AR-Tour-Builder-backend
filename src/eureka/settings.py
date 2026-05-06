@@ -157,10 +157,11 @@ ADMIN_EMAILS = [email.strip() for email in os.environ.get('ADMIN_EMAILS', '').sp
 
 # EGI entitlement required for login access. If set, users must have an eduperson_entitlement
 # that contains this string. Leave empty to allow all EGI users.
-EGI_ENTITLEMENT = os.environ.get('EGI_ENTITLEMENT', '')
-
-# Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
+EGI_ENTITLEMENT = os.environ.get('EGI_ENTITLEMENT')
+if not EGI_ENTITLEMENT:
+    raise ImproperlyConfigured(
+        "EGI_ENTITLEMENT environment variable is required, set it to 'None' to allow all EGI users or to a specific entitlement string to restrict access (e.g. 'urn:mace:egi.eu:group:example:access')"
+    )
 
 LANGUAGE_CODE = 'en-us'
 
