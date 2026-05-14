@@ -101,7 +101,7 @@ class OIDCAuthenticationBackend(ModelBackend):
         # Entitlement gate: if EGI_ENTITLEMENT is configured, the user must hold it
         required_entitlement = getattr(settings, 'EGI_ENTITLEMENT' )
         if required_entitlement != 'None':
-            entitlements = (userinfo or {}).get('entitlement', [])
+            entitlements = (userinfo or {}).get('entitlements', [])
             if isinstance(entitlements, str):
                 entitlements = [entitlements]
             if not any(required_entitlement in ent for ent in entitlements):
@@ -270,8 +270,8 @@ class OIDCAuthenticationBackend(ModelBackend):
         elif should_be_staff and not user.is_staff:
             user.is_staff = True
             updated = True
-        
-        # Note: If you want to automatically REVOKE admin privileges when an email 
+
+        # Note: If you want to automatically REVOKE admin privileges when an email
         # is removed from the settings list, you could add:
         # elif not should_be_admin and user.is_superuser: user.is_superuser = False; updated = True...
 
